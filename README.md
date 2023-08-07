@@ -109,8 +109,8 @@ isoelectric_point:  11.999967765808105
 
 The Lyticity Index is a valuable tool for discovering antimicrobial peptides. To broaden its utility, we expanded the index based on the groundwork laid by [Mouratada et al](https://doi.org/10.1038%2Fs41587-019-0222-z). (2019), to encompass six varieties of stapled peptides and two classes of non-standard amino acids in addition to S5. We subsequently re-measured the Lyticity Index values of all-natural peptides. The formula for calculating this index is as follows:
 $$LI = \sum\limits_{i=1}^{n}(H_i + H_{i+4}) + \sum\limits_{i=1}^{n-1}(H_i + H_{i+3})$$
-where $H_i$ is the hydrophobicity index of the i-th amino acid, and n is the number of amino acids.
-| Amino Acid | Chemical Shift (ppm) | Amino Acid | Chemical Shift (ppm) |
+where $H_i$ is the hydrophobicity value of the i-th amino acid, and n is the number of amino acids.
+| Amino Acid | $\Delta t_{\text{Gly}}$ | Amino Acid | $\Delta t_{\text{Gly}}$ |
 | --- | --- | --- | --- |
 | W | 32.606 | F | 29.127 |
 | L | 23.398 | I | 20.014 |
@@ -126,6 +126,8 @@ where $H_i$ is the hydrophobicity index of the i-th amino acid, and n is the num
 | S8 | 65.555 | R3 | 12.32 |
 | R5 | 33.902 | R8 | 65.272 |
 | NLE | 24.442 | Aib | 8.493 |
+
+$\Delta t_{\text{Gly}}$ is retention time relative to glycine at 25°C in reversed-phase chromatography (RP-HPLC).
 
 
 In addition to calculating the lyticity index, we can also draw the image
