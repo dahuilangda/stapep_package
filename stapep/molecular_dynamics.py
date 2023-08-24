@@ -20,16 +20,19 @@ class PrepareProt(object):
         Args:
             seq (str): protein sequence
             output (str): output file name
-            alphafold (bool): if True, the protein structure is from ESMFold, otherwise, the protein structure is from sequence using AmberTools
+            method (str): if method is None, the protein structure is from sequence using AmberTools. 
+                          if method is 'alphafold', the protein structure is from ESMFold.
+                          if method is 'modeller', the protein structure is from homology modeling using Modeller.
 
     '''
-    def __init__(self, seq: str, output: str, alphafold=True) -> None:
+    def __init__(self, seq: str, output: str, method: str=None, template_pdb_file_path: str=None) -> None:
         self.seq = seq
         self.output = output
         if not os.path.exists(self.output):
             os.makedirs(self.output)
         self.seqpp = SeqPreProcessing()
-        self.alphafold = alphafold
+        self.method = method
+        self.template_pdb_file_path = template_pdb_file_path
         self._check_programs_installed()
 
     def _check_programs_installed(self) -> None:
@@ -127,12 +130,86 @@ class PrepareProt(object):
     #                 break
     #     return lines
 
-    def _seq_to_pdb(self) -> str:
+    def _pdb_to_seq(self, pdb_file_path):
+        """
+        Extract the amino acid sequence from a PDB file. If the amino acid is not standard, return 'X'.
+        
+        Args:
+        - pdb_file_path (str): Path to the PDB file.
+        
+        Returns:
+        - str: Amino acid sequence.
+        """
+        # Define the mapping of three-letter code to one-letter code for amino acids.
+        amino_acid_map = {
+            'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C', 'GLN': 'Q', 
+            'GLU': 'E', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I', 'LEU': 'L', 'LYS': 'K',
+            'MET': 'M', 'PHE': 'F', 'PRO': 'P', 'SER': 'S', 'THR': 'T', 'TRP': 'W',
+            'TYR': 'Y', 'VAL': 'V'
+        }
+        
+        sequence = ""
+        last_residue_number = None
+        
+        with open(pdb_file_path, 'r') as pdb_file:
+            for line in pdb_file:
+                if line.startswith("ATOM"):
+                    residue_name = line[17:20].strip()
+                    residue_number = line[22:26].strip()
+                    
+                    if residue_number != last_residue_number:
+                        sequence += amino_acid_map.get(residue_name, 'X')
+                        last_residue_number = residue_number
+                        
+        return sequence
+    
+    def homology_modeling(self, seq):
+        if self.template_pdb_file_path is None:
+            raise ValueError('Please provide template pdb file path')
+
+        try:
+            from modeller import Environ, Model, Alignment
+            from modeller.automodel import automodel
+        except ImportError:
+            raise ImportError('Please install modeller first')
+        
+        # self.seq -> sequence.fasta
+        with open(f'{self.output}/sequence.fasta', 'w') as f:
+            f.write(f'>target\n{seq}')
+
+        try: 
+            pwd = os.getcwd()
+            shutil.copy(self.template_pdb_file_path, f'{self.output}/template.pdb')
+            os.chdir(self.output)
+
+            # generate alignment file (alignment.ali)
+            e = Environ()
+            m = Model(e, file='template')
+            aln = Alignment(e)
+            aln.append_model(m, align_codes='template', atom_files='template.pdb')
+            aln.append(file='sequence.fasta', align_codes='target', alignment_format='FASTA')
+            aln.align2d()
+            aln.write(file='alignment.ali', alignment_format='PIR')
+
+            # homology modeling
+            a = automodel(e, alnfile='alignment.ali',
+                            knowns='template', sequence='target')
+            a.starting_model = 1
+            a.ending_model = 1
+            
+            a.make()
+        finally:
+            os.chdir(pwd)
+
+        return os.path.join(pwd, self.output, "target.B99990001.pdb")
+
+    def _seq_to_pdb(self, method: str='alphafold') -> str:
         '''
-            Generate PDB file from sequence using ESMFold
+            Generate PDB file from sequence using ESMFold or homology modeling using Modeller
             DOI: 10.1101/2022.07.20.500902
+            DOI: 10.1007/978-1-0716-0892-0_14
         '''
-        url = 'https://api.esmatlas.com/foldSequence/v1/pdb/'
+        
         seq_list = self.seqpp._seq_to_list(self.seq)
 
         # replace Non-standard amino acids with Alanine
@@ -140,9 +217,18 @@ class PrepareProt(object):
         std_seq_list = [seq if seq not in non_std_aa else 'A' for seq in seq_list]
         # remove ACE and NME if exist
         std_seq_list = [seq for seq in std_seq_list if seq not in ['ACE', 'NME', 'Ac', 'NH2']]
-        r = requests.post(url, data=''.join(std_seq_list))
-        lines = r.text.split('\n')
         
+        if method == 'alphafold':
+            url = 'https://api.esmatlas.com/foldSequence/v1/pdb/'
+            r = requests.post(url, data=''.join(std_seq_list))
+            lines = r.text.split('\n')
+        elif method == 'modeller':
+            hm_file = self.homology_modeling(''.join(std_seq_list))
+            with open(hm_file, 'r') as f:
+                lines = f.readlines()
+        else:
+            raise ValueError('Please choose a method from alphafold or modeller, and provide template pdb if you choose modeller')
+
         stapled_idx_list = []
         for step, seq in enumerate(seq_list):
             if seq in non_std_aa:
@@ -217,15 +303,20 @@ class PrepareProt(object):
                 frcmod_file = f"{os.path.dirname(os.path.realpath(__file__))}/templates/{prefix}/frcmod.{prefix.lower()}"
                 lines.extend((f'loadAmberPrep {prepin_file}', f'loadAmberParams {frcmod_file}'))
 
-        if self.alphafold:
-            pdb_file = self._seq_to_pdb()
+        if self.method is None:
+            lines.append('pep = sequence { ' + self.seqpp._one_to_three(self.seq) + ' }')
+        elif self.method == 'alphafold':
+            pdb_file = self._seq_to_pdb(method='alphafold')
             base_pdb_file = os.path.basename(pdb_file)
             lines.append(f'pep = loadpdb {base_pdb_file}')
-        else:
-            lines.append('pep = sequence { ' + self.seqpp._one_to_three(self.seq) + ' }')
+        elif self.method == 'modeller':
+            pdb_file = self._seq_to_pdb(method='modeller')
+            base_pdb_file = os.path.basename(pdb_file)
+            lines.append(f'pep = loadpdb {base_pdb_file}')
+            
 
         if len(self._stapled_idx) != 0 and len(self._stapled_idx) % 2 == 0:
-            if self._has_cap and self.alphafold:
+            if self._has_cap and self.method is not None:
                 lines.extend(f'bond pep.{self._stapled_idx[i]-1}.C2 pep.{self._stapled_idx[i+1]-1}.C2' for i in range(0, len(self._stapled_idx), 2))
             else:
                 lines.extend(f'bond pep.{self._stapled_idx[i]}.C2 pep.{self._stapled_idx[i+1]}.C2' for i in range(0, len(self._stapled_idx), 2))
@@ -260,7 +351,6 @@ class PrepareProt(object):
             Returns:
                 None
         '''
-        current_path = os.getcwd()
         tleap_file = self._gen_tleap_file(
             prmtop_vac=prmtop_vac,
             inpcrd_vac=inpcrd_vac,
@@ -275,8 +365,8 @@ class Simulation(object):
     '''
         Molecular dynamics using OpenMM
     '''
-    def __init__(self, output) -> None:
-        self.output = output
+    def __init__(self, work_path) -> None:
+        self.work_path = work_path
 
     def setup(self, type: str='implicit', # explicit or implicit
                     solvent: str='water', # water or membrane
@@ -302,15 +392,15 @@ class Simulation(object):
         self.nsteps = nsteps
 
         if type == 'explicit':
-            self.prmtop = os.path.join(self.output, 'pep.prmtop')
-            self.inpcrd = os.path.join(self.output, 'pep.inpcrd')
+            self.prmtop = os.path.join(self.work_path, 'pep.prmtop')
+            self.inpcrd = os.path.join(self.work_path, 'pep.inpcrd')
             self.pep_solv = self._load_file
             self.system = self.pep_solv.createSystem(nonbondedMethod=app.PME,
                                     nonbondedCutoff=8.0*u.angstroms,
                                     constraints=app.HBonds)
         elif type == 'implicit':
-            self.prmtop = os.path.join(self.output, 'pep_vac.prmtop')
-            self.inpcrd = os.path.join(self.output, 'pep_vac.inpcrd')
+            self.prmtop = os.path.join(self.work_path, 'pep_vac.prmtop')
+            self.inpcrd = os.path.join(self.work_path, 'pep_vac.inpcrd')
             self.pep_solv = self._load_file
             if solvent == 'water':
                 self.system = self.pep_solv.createSystem(implicitSolvent=app.OBC2, 
@@ -350,14 +440,14 @@ class Simulation(object):
         self.sim = app.Simulation(self.pep_solv.topology, self.system, self.integrator, self.platform, prop)
         self.sim.context.setPositions(self.pep_solv.positions)
         self.sim.reporters.append(
-                mm.app.DCDReporter(f'{self.output}/traj.dcd', interval)
+                mm.app.DCDReporter(f'{self.work_path}/traj.dcd', interval)
         )
         self.sim.reporters.append(
-                pmd.openmm.StateDataReporter(f'{self.output}/traj.log', reportInterval=interval,
+                pmd.openmm.StateDataReporter(f'{self.work_path}/traj.log', reportInterval=interval,
                                 volume=True,density=True,separator='\t')
         )
         self.sim.reporters.append(
-                pmd.openmm.ProgressReporter(f'{self.output}/traj.log.info', interval*5, self.nsteps)
+                pmd.openmm.ProgressReporter(f'{self.work_path}/traj.log.info', interval*5, self.nsteps)
         )
 
     def minimize(self):

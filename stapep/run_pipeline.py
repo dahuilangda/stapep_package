@@ -11,7 +11,7 @@ def md(args):
     """Run molecular dynamics simulation"""
 
     # Prepare the protein for molecular dynamics simulation
-    pp = PrepareProt(args.seq, args.output, alphafold=args.alphafold)
+    pp = PrepareProt(args.seq, args.output, method=args.method, template_pdb_file_path=args.template_pdb)
     pp._gen_prmtop_and_inpcrd_file()
 
     # Run molecular dynamics simulation
@@ -109,7 +109,8 @@ def get_args():
     parser.add_argument('--timestep', type=float, default=0.002, help='Timestep (ps)')
     parser.add_argument('--interval', type=int, default=1000, help='Interval (ps)')
     parser.add_argument('--nsteps', type=int, default=5000000, help='Number of steps')
-    parser.add_argument('--alphafold', action='store_true', help='Use ESMFold to generate the structure')
+    parser.add_argument('--method', type=str, default='alphafold', help='Method to generate 3D structure, including alphafold, modeller or None')
+    parser.add_argument('--template_pdb', type=str, default=None, help='Template PDB file for modeller, only used when method is modeller')
     parser.add_argument('--ph', type=float, default=7.0, help='pH')
     parser.add_argument('--start_frame', type=int, default=0, help='Start frame')
     parser.add_argument('--permeability', action='store_true', help='Calculate permeability using build-in model')
