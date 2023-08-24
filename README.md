@@ -52,19 +52,32 @@ seq = 'Ac-BATP-R8-RRR-Aib-BLBR-R3-FKRLQ' # Define the peptide sequence
 output = 'data' # Define the output directory
 
 # Prepare the protein for molecular dynamics simulation
-pp = PrepareProt(seq, output, alphafold=True)
-pp._gen_prmtop_and_inpcrd_file() # Generate the prmtop and inpcrd files of Amber format
+# method could be in ['alphafold', 'modeller', None]
+# 'alphafold': use ESMFold to predict the structure
+pp = PrepareProt(seq, output, method='alphafold')
+# # 'modeller': use Modeller to predict the structure and use the template_pdb_file_path to specify the template file
+# pp = PrepareProt(seq, output, method='modeller', template_pdb_file_path='demo_homology_model_template.pdb')
+# # None: use the sequence to generate the structure directly by AmberTools
+# pp = PrepareProt(seq, output, method=None)
 
+pp._gen_prmtop_and_inpcrd_file() # Generate the prmtop and inpcrd files of Amber format
 # Molecular dynamics simulation
 sim = Simulation(output)
 sim.setup(
-        type='implicit', # 'explicit' or 'implicit'
-        solvent='water', # 'water' or 'chloroform'
-        temperature=300, # Kelvin
-        friction=1, # ps^-1
-        timestep=2, # fs
-        interval=100, # ps (demo only)
-        nsteps=500000 # 1 ns (demo only)
+        # 'explicit' or 'implicit'
+        type='implicit', 
+        # 'water' or 'chloroform'
+        solvent='water', 
+        # Kelvin
+        temperature=300, 
+        # ps^-1
+        friction=1, 
+        # fs
+        timestep=2, 
+        # ps (demo only)
+        interval=100, 
+        # 1 ns (demo only)
+        nsteps=500000 
     )
 sim.minimize()
 sim.run()
@@ -195,10 +208,10 @@ _Demo: examples/ex2_extract_features.ipynb_
 
 Finally, we can use the following command to automatically obtain the features of the stapled peptide and predict the **cell permeability** through the built-in machine learning model.
 ```python
-python -m stapep.run_pipeline --seq "Ac-BATP-R8-RRR-Aib-BLBR-R3-FKRLQ" \ # peptide sequence
-                       --output example/data \ # output directory
-                       --alphafold \ # use ESMFold to predict the structure
-                       --permeability # predict the permeability using built-in machine learning model
+python -m stapep.run_pipeline --seq "Ac-BATP-R8-RRR-Aib-BLBR-R3-FKRLQ" \
+                       --output example/data \
+                       --method alphafold \
+                       --permeability 
     args:
         --seq: peptide sequence
         --output: output directory
