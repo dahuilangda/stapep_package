@@ -177,21 +177,21 @@ class PrepareProt(object):
         with open(f'{self.output}/sequence.fasta', 'w') as f:
             f.write(f'>target\n{seq}')
 
-        try: # generate alignment file (alignment.ali)
-            e = Environ()
-            m = Model(e, file=self.template_pdb_file_path)
-            aln = Alignment(e)
-            aln.append_model(m, align_codes='template', atom_files=self.template_pdb_file_path)
-            aln.append(file=f'{self.output}/sequence.fasta', align_codes='target', alignment_format='FASTA')
-            aln.align2d()
-            aln.write(file=f'{self.output}/alignment.ali', alignment_format='PIR')
-        except Exception as e:
-            raise e
-
-        try: # generate model.pdb
+        try: 
             pwd = os.getcwd()
             shutil.copy(self.template_pdb_file_path, f'{self.output}/template.pdb')
             os.chdir(self.output)
+
+            # generate alignment file (alignment.ali)
+            e = Environ()
+            m = Model(e, file='template')
+            aln = Alignment(e)
+            aln.append_model(m, align_codes='template', atom_files='template.pdb')
+            aln.append(file='sequence.fasta', align_codes='target', alignment_format='FASTA')
+            aln.align2d()
+            aln.write(file='alignment.ali', alignment_format='PIR')
+
+            # homology modeling
             a = automodel(e, alnfile='alignment.ali',
                             knowns='template', sequence='target')
             a.starting_model = 1
@@ -202,10 +202,6 @@ class PrepareProt(object):
             os.chdir(pwd)
 
         return os.path.join(pwd, self.output, "target.B99990001.pdb")
-        # hm_file = os.path.join(pwd, self.output, "target.B99990001.pdb")
-        # with open(hm_file, 'r') as f:
-        #     lines = f.readlines()
-        # return lines
 
     def _seq_to_pdb(self, method: str='alphafold') -> str:
         '''

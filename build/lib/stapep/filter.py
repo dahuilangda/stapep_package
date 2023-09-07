@@ -33,8 +33,7 @@ class Filter(object):
     def __init__(self, 
                  df: pd.DataFrame, 
                  name_col: str='name', 
-                 seq_col: str='sequence', 
-                 score_col: str='score'):
+                 seq_col: str='sequence'):
         self.df = df
         self.name_col = name_col
         self.seq_col = seq_col
@@ -251,7 +250,6 @@ class Filter(object):
 
         return train_df, test_df
     
-# sourcery skip: avoid-builtin-shadow
 if __name__ == '__main__':
     df = pd.read_csv('../example/datasets/Stapled-peptide_permeability.csv')
     

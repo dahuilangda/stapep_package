@@ -5,6 +5,7 @@ stapep/filter.py
 stapep/molecular_dynamics.py
 stapep/params.py
 stapep/run_pipeline.py
+stapep/structure.py
 stapep/utils.py
 stapep.egg-info/PKG-INFO
 stapep.egg-info/SOURCES.txt
