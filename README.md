@@ -268,7 +268,8 @@ python -m stapep.run_pipeline --seq "Ac-BATP-R8-RRR-Aib-BLBR-R3-FKRLQ" \
         --timestep: timestep(ps) # default: 0.002ps
         --interval: interval(ps) # default: 1000ps
         --nsteps: number of steps # default: 5000000 (100ns)
-        --alphafold: use ESMFold to predict the structure
+        --method: method of structure modeling (alphafold, modeller, or None) # default: alphafold
+        --template_pdb_file_path: template pdb file path # default: None, only used when method is modeller
         --permeability: predict the permeability using built-in machine learning model
         --ph: pH # default: 7.0
         --start_frame: start frame # default: 0
