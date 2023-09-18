@@ -40,12 +40,69 @@ Supports all natural amino acids, 2 non-standard amino acids (Aib, NLE), and 6 s
 
 
 ### Generate structures from stapled peptide sequence
-* To begin, 3D structures of natural peptides corresponding to the peptide sequences were generated utilizing [ESMFold](https://github.com/facebookresearch/esm)
-* Next, the non-standard amino acids in the naturally occurring peptide structures need to be named correctly. This is a crucial step to ensure the accuracy and consistency of the peptide structures. The next step is to utilize tleap in AmberTools to finalize the structure of the stapled peptide.
-* Ultimately, in order to obtain stable 3D structures of the stapled peptide, it is necessary to perform simulation using OpenMM. By conducting these simulations, a more comprehensive understanding of the peptide's properties and behaviors in a simulated environment can be obtained.
+Our software offers a streamlined workflow for modeling and optimizing peptide structures, even those containing non-standard amino acids. Here's a step-by-step breakdown of the process:
+
+1. **Initial Conversion**: Non-standard amino acids are initially converted to ALA (alanine) to facilitate the modeling of natural peptides.
+
+2. **Peptide Structure Modeling**:
+    - **Modeller - Homology Modeling**: Utilizes the principle that proteins with similar sequences often have analogous 3D structures. Using a known structure as a template, Modeller predicts the structure of the target protein.
+    - **ESMFold - De Novo Prediction**: Without relying on a template, ESMFold predicts protein structures solely based on the peptide sequence.
+    - **AmberTools - From Sequence to Structure**: Post peptide sequence definition, AmberTools' tleap module generates an initial 3D structure.
+
+3. **Reconversion of Amino Acids**: Once the natural peptide structure is modeled, the names of the non-standard amino acids, previously converted to ALA, are reverted back to their original non-standard naming.
+
+4. **Structural Completion with tleap**: Utilizing tleap in AmberTools, the peptide structure is finalized, ensuring the inclusion and correct positioning of non-standard amino acids.
+
+5. **Dynamics Optimization with OpenMM**: To achieve stable and refined 3D structures of peptides, simulations using OpenMM are performed. This step provides a comprehensive understanding of the peptide's properties and behaviors within a simulated environment.
+
+With this toolkit, users are equipped with the means to effortlessly model and optimize peptide structures, catering to both standard and non-standard amino acid scenarios, and setting the stage for advanced research applications.
 
 
-Perform molecular dynamics simulation to generate 3D structures of the stapled peptide, as shown in the following demo.
+Perform short time (100ps) molecular dynamics simulation to generate 3D structures of the stapled peptide, as shown in the following demo.
+
+1. homology modeling using Modeller
+```python
+from stapep.structure import Structure, AlignStructure
+
+seq = 'Ac-BATP-R8-RRR-Aib-BLBR-R3-FKRLQ' # Define the peptide sequence
+st = Structure(verbose=True) # Initialize the structure class
+
+# Generate the 3D structure of the stapled peptide using Modeller
+st.generate_3d_structure_from_template(
+        seq=seq,
+        output_pdb='data/homology_model.pdb', 
+        template_pdb='data/template.pdb')
+
+# align structure to template (Optional)
+AlignStructure.align(
+        ref_pdb='data/template.pdb',
+        pdb='data/homology_model.pdb',
+        output_pdb='data/aligned.pdb')
+```
+2. de novo prediction using ESMFold
+```python
+from stapep.structure import Structure
+
+seq = 'Ac-BATP-R8-RRR-Aib-BLBR-R3-FKRLQ' # Define the peptide sequence
+st = Structure(verbose=True) # Initialize the structure class
+st.de_novo_3d_structure(
+        seq=seq, 
+        output_pdb='data/de_novo.pdb')
+```
+3. Sequence to structure using AmberTools (Not recommended)
+```python
+from stapep.structure import Structure
+
+seq = 'Ac-BATP-R8-RRR-Aib-BLBR-R3-FKRLQ' # Define the peptide sequence
+st = Structure(verbose=True) # Initialize the structure class
+st.generate_3d_structure_from_sequence(
+        seq=seq, 
+        output_pdb='data/from_sequence.pdb')
+```
+_Demo: examples/ex0_structure.ipynb_
+
+#### Advanced Molecular Dynamics Simulation
+While the structure module provides a quick approach to obtaining peptide structures through short-time molecular dynamics, users who wish for more accurate and stable features can opt for extended molecular dynamics simulations as described below:
 ```python
 from stapep.molecular_dynamics import PrepareProt, Simulation
 seq = 'Ac-BATP-R8-RRR-Aib-BLBR-R3-FKRLQ' # Define the peptide sequence
@@ -53,37 +110,26 @@ output = 'data' # Define the output directory
 
 # Prepare the protein for molecular dynamics simulation
 # method could be in ['alphafold', 'modeller', None]
-# 'alphafold': use ESMFold to predict the structure
+# Note: if you want to use the modeller method, you need to specify the template_pdb_file_path
 pp = PrepareProt(seq, output, method='alphafold')
-# # 'modeller': use Modeller to predict the structure and use the template_pdb_file_path to specify the template file
 # pp = PrepareProt(seq, output, method='modeller', template_pdb_file_path='demo_homology_model_template.pdb')
-# # None: use the sequence to generate the structure directly by AmberTools
 # pp = PrepareProt(seq, output, method=None)
 
 pp._gen_prmtop_and_inpcrd_file() # Generate the prmtop and inpcrd files of Amber format
 # Molecular dynamics simulation
 sim = Simulation(output)
-sim.setup(
-        # 'explicit' or 'implicit'
-        type='implicit', 
-        # 'water' or 'chloroform'
-        solvent='water', 
-        # Kelvin
-        temperature=300, 
-        # ps^-1
-        friction=1, 
-        # fs
-        timestep=2, 
-        # ps (demo only)
-        interval=100, 
-        # 1 ns (demo only)
-        nsteps=500000 
+sim.setup(type='implicit', # 'explicit' or 'implicit'
+          solvent='water', # 'water' or 'chloroform'
+          temperature=300, # Kelvin
+          friction=1, # ps^-1
+          timestep=2, # fs
+          interval=100, # ps (demo only)
+          nsteps=500000 # 1 ns (demo only)
     )
 sim.minimize()
 sim.run()
 ```
 _Demo: examples/ex1_molecular_dynamics.ipynb_
-
 
 ### Generate features from stapled peptide sequence
 This tool enables the export of a variety of features based on peptide sequences, including length (excluding N-terminal and C-terminal), molecular weight, hydrophobicity index, charge, charge density, aromaticity, fraction arginine, fraction lysine, lyticity index, and isoelectric point. 
