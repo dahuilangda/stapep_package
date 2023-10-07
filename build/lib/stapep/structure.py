@@ -275,16 +275,16 @@ class AlignStructure(object):
 
 if __name__ == '__main__':
     seq = 'Ac-BATP-R8-RRR-Aib-BLBR-R3-FKRLQ'
-    # st = Structure(verbose=True)
-    # st.generate_3d_structure_from_template(seq=seq, 
-    #                                        output_pdb='example/data/homology_model.pdb', 
-    #                                        template_pdb='example/data/template.pdb')
+    st = Structure(verbose=True)
+    st.generate_3d_structure_from_template(seq=seq, 
+                                           output_pdb='example/data/homology_model.pdb', 
+                                           template_pdb='example/data/template.pdb')
     
     AlignStructure.align(ref_pdb='example/data/template.pdb',
              pdb='example/data/homology_model.pdb',
              output_pdb='example/data/aligned.pdb')
 
-    # st.generate_3d_structure_from_sequence(seq=seq, 
-    #                                        output_pdb='example/data/sequence.pdb')
-    # st.de_novo_3d_structure(seq=seq, 
-    #                         output_pdb='example/data/denovo.pdb')
+    st.generate_3d_structure_from_sequence(seq=seq, 
+                                           output_pdb='example/data/sequence.pdb')
+    st.de_novo_3d_structure(seq=seq, 
+                            output_pdb='example/data/denovo.pdb')

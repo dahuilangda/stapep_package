@@ -561,6 +561,12 @@ class SeqPreProcessing(object):
         re_aa = re.compile(r'(S3|S5|S8|R3|R5|R8|Aib|Ac|NH2|[A-Z]|[a-z]|[0-9])')
         seq_to_list = re_aa.findall(seq)
         return [x.replace('X', 'S5') for x in seq_to_list]
+    
+    def is_stapled(self, seq: str) -> bool:
+        '''
+            Check if sequence is stapled
+        '''
+        return len(set(self._seq_to_list(seq)) & set(['X', 'S3', 'S5', 'S8', 'R3', 'R5', 'R8'])) > 0
 
     def _check_seq_validation(self, seq: str) -> None:
         '''
