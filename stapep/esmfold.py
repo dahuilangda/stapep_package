@@ -29,5 +29,5 @@ if __name__ == "__main__":
     parser.add_argument("-device", help="device", default="cpu")
     args = parser.parse_args()
 
-    predict_pdb(args.seq, args.output)
-    # python esmfold.py -seq "MKTVRQERLKSIVRILERSKEPVSGAQLAEELSVSRQVIVQDIAYLRSLGYNIVATPRGYVLAGG" -output "test.pdb"
+    print(predict_pdb(args.seq, args.device))
+    # python -m stapep.esmfold -seq "MKTVRQERLKSIVRILERSKEPVSGAQLAEELSVSRQVIVQDIAYLRSLGYNIVATPRGYVLAGG" > test.pdb
