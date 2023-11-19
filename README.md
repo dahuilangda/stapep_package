@@ -20,6 +20,8 @@ Installation
         conda install -c conda-forge mamba
         mamba install -c conda-forge openmm parmed pandas numpy networkx biopython rdkit pymol-open-source scikit-learn lightgbm
         mamba install -c conda-forge -c ambermd ambertools
+        pip install transformers
+        pip install torch torchvision torchaudio
 
         python setup.py install
 
