@@ -14,7 +14,7 @@ import Bio.Align.substitution_matrices as matlist
 from Bio.Data.SCOPData import protein_letters_3to1 as aa3to1
 
 from stapep.molecular_dynamics import PrepareProt, Simulation
-from stapep.utils import PhysicochemicalPredictor
+from stapep.utils import PhysicochemicalPredictor, SeqPreProcessing
 
 class Structure(object):
     """
@@ -51,6 +51,7 @@ class Structure(object):
         self.tmp_dir = os.path.join('/tmp', str(uuid.uuid4()))
         self.save_tmp_dir = save_tmp_dir
         self.verbose = verbose
+
         if not os.path.exists(self.tmp_dir):
             os.makedirs(self.tmp_dir)
         if verbose:
@@ -108,6 +109,8 @@ class Structure(object):
             Returns:
                 str: The path to the generated PDB file.
         '''
+        spp = SeqPreProcessing()
+        spp.check_seq_validation(seq)
         # get absolute path of template pdb file
         template_pdb = os.path.abspath(template_pdb)
         pp = PrepareProt(seq, self.tmp_dir, method='modeller', template_pdb_file_path=template_pdb)
@@ -129,6 +132,8 @@ class Structure(object):
             Returns:
                 str: The path to the generated PDB file.
         '''
+        spp = SeqPreProcessing()
+        spp.check_seq_validation(seq)
         pp = PrepareProt(seq, self.tmp_dir, method='alphafold')
         pp._gen_prmtop_and_inpcrd_file()
         self._short_time_simulation()
@@ -151,6 +156,8 @@ class Structure(object):
             Note:
                 This method is not recommended as the generated structure is not stable.
         '''
+        spp = SeqPreProcessing()
+        spp.check_seq_validation(seq)
         pp = PrepareProt(seq, self.tmp_dir, method=None)
         pp._gen_prmtop_and_inpcrd_file()
         self._short_time_simulation()

@@ -203,7 +203,7 @@ class PrepareProt(object):
 
         return os.path.join(pwd, self.output, "target.B99990001.pdb")
 
-    def _seq_to_pdb(self, method: str='alphafold', max_retries: int=3) -> str:
+    def _seq_to_pdb(self, method: str='alphafold', max_retries: int=3, local=True) -> str:
         '''
             Generate PDB file from sequence using ESMFold or homology modeling using Modeller
             DOI: 10.1101/2022.07.20.500902
@@ -219,18 +219,23 @@ class PrepareProt(object):
         std_seq_list = [seq for seq in std_seq_list if seq not in ['ACE', 'NME', 'Ac', 'NH2']]
 
         if method == 'alphafold':
-            url = 'https://api.esmatlas.com/foldSequence/v1/pdb/'
-            for i in range(max_retries):
-                try:
-                    r = requests.post(url, data=''.join(std_seq_list))
-                    r.raise_for_status()  # This will raise an HTTPError if the HTTP request returned an unsuccessful status code
-                    lines = r.text.split('\n')
-                    break
-                except requests.exceptions.RequestException as e:
-                    if i < max_retries - 1:  # If it's not the last retry
-                        time.sleep(2)  # Wait for 2 seconds before retrying
-                    else:  # If it's the last retry
-                        raise e  # Propagate the error up, so it can be caught and handled outside of this function
+            if local:
+                from stapep.esmfold import predict_pdb
+                lines = predict_pdb(''.join(std_seq_list))
+                lines = lines.split('\n')
+            else:
+                url = 'https://api.esmatlas.com/foldSequence/v1/pdb/'
+                for i in range(max_retries):
+                    try:
+                        r = requests.post(url, data=''.join(std_seq_list))
+                        r.raise_for_status()  # This will raise an HTTPError if the HTTP request returned an unsuccessful status code
+                        lines = r.text.split('\n')
+                        break
+                    except requests.exceptions.RequestException as e:
+                        if i < max_retries - 1:  # If it's not the last retry
+                            time.sleep(2)  # Wait for 2 seconds before retrying
+                        else:  # If it's the last retry
+                            raise e  # Propagate the error up, so it can be caught and handled outside of this function
         elif method == 'modeller':
             hm_file = self.homology_modeling(''.join(std_seq_list))
             with open(hm_file, 'r') as f:
@@ -315,7 +320,7 @@ class PrepareProt(object):
         if self.method is None:
             lines.append('pep = sequence { ' + self.seqpp._one_to_three(self.seq) + ' }')
         elif self.method == 'alphafold':
-            pdb_file = self._seq_to_pdb(method='alphafold')
+            pdb_file = self._seq_to_pdb(method='alphafold', local=True)
             base_pdb_file = os.path.basename(pdb_file)
             lines.append(f'pep = loadpdb {base_pdb_file}')
         elif self.method == 'modeller':

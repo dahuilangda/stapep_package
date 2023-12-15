@@ -37,6 +37,12 @@ def timeout(seconds, error_message="Timeout Error: the cmd have not finished."):
         return functools.wraps(func)(wrapper)
     return decorated
 
+
+class PermDataSet(object):
+    '''
+        Permutation dataset from hundreds of papers.
+    '''
+
 class ProtParamsSeq(object):
     '''
         Calculate some params based on sequence...
@@ -568,7 +574,7 @@ class SeqPreProcessing(object):
         '''
         return len(set(self._seq_to_list(seq)) & set(['X', 'S3', 'S5', 'S8', 'R3', 'R5', 'R8'])) > 0
 
-    def _check_seq_validation(self, seq: str) -> None:
+    def check_seq_validation(self, seq: str) -> None:
         '''
             Check if sequence is valid
         '''
@@ -581,7 +587,7 @@ class SeqPreProcessing(object):
             Convert one letter amino acid to three letter amino acid
         '''
         seq_list = self._seq_to_list(seq)
-        self._check_seq_validation(seq)
+        self.check_seq_validation(seq)
         three_letter_seq = [self.aa_reversed_dict[aa] for aa in seq_list]
         return ' '.join(three_letter_seq)
 

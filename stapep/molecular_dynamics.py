@@ -203,7 +203,11 @@ class PrepareProt(object):
 
         return os.path.join(pwd, self.output, "target.B99990001.pdb")
 
+<<<<<<< HEAD
     def _seq_to_pdb(self, method: str='alphafold', max_retries: int=3, local: bool=True) -> str:
+=======
+    def _seq_to_pdb(self, method: str='alphafold', max_retries: int=3, local=True) -> str:
+>>>>>>> 10898a7 (fix bug for structure)
         '''
             Generate PDB file from sequence using ESMFold or homology modeling using Modeller
             DOI: 10.1101/2022.07.20.500902
@@ -222,6 +226,10 @@ class PrepareProt(object):
             if local:
                 from stapep.esmfold import predict_pdb
                 lines = predict_pdb(''.join(std_seq_list))
+<<<<<<< HEAD
+=======
+                lines = lines.split('\n')
+>>>>>>> 10898a7 (fix bug for structure)
             else:
                 url = 'https://api.esmatlas.com/foldSequence/v1/pdb/'
                 for i in range(max_retries):
@@ -319,7 +327,7 @@ class PrepareProt(object):
         if self.method is None:
             lines.append('pep = sequence { ' + self.seqpp._one_to_three(self.seq) + ' }')
         elif self.method == 'alphafold':
-            pdb_file = self._seq_to_pdb(method='alphafold')
+            pdb_file = self._seq_to_pdb(method='alphafold', local=True)
             base_pdb_file = os.path.basename(pdb_file)
             lines.append(f'pep = loadpdb {base_pdb_file}')
         elif self.method == 'modeller':
