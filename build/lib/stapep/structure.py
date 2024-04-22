@@ -259,6 +259,22 @@ class AlignStructure(object):
             print(e)
 
     @staticmethod
+    def rmsd(ref_pdb: str, pdb: str):
+        try:
+            import pymol
+            from pymol import cmd
+            cmd.reinitialize()
+        except Exception as e:
+            print(e)
+            return None
+
+        pymol.cmd.load(ref_pdb, 'ref')
+        pymol.cmd.load(pdb, 'denovo')
+        out = pymol.cmd.align('ref and name CA', 'denovo and name CA')
+        rmsd, n_atoms, n_cyles, n_rmsd_pre, n_atom_pre, score, n_res = out
+        return rmsd
+
+    @staticmethod
     def get_CA_atoms_from_model(model, residue_numbers):
         """
         Get CA atoms from a given model based on specified residue numbers.

@@ -8,7 +8,6 @@ from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 
-
 from stapep.utils import SeqPreProcessing
 from stapep.params import amino_acid_dict
 

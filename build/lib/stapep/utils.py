@@ -37,6 +37,12 @@ def timeout(seconds, error_message="Timeout Error: the cmd have not finished."):
         return functools.wraps(func)(wrapper)
     return decorated
 
+
+class PermDataSet(object):
+    '''
+        Permutation dataset from hundreds of papers.
+    '''
+
 class ProtParamsSeq(object):
     '''
         Calculate some params based on sequence...

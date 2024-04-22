@@ -203,7 +203,7 @@ class PrepareProt(object):
 
         return os.path.join(pwd, self.output, "target.B99990001.pdb")
 
-    def _seq_to_pdb(self, method: str='alphafold', max_retries: int=3, local=True) -> str:
+    def _seq_to_pdb(self, method: str='alphafold', max_retries: int=3, local: bool=True) -> str:
         '''
             Generate PDB file from sequence using ESMFold or homology modeling using Modeller
             DOI: 10.1101/2022.07.20.500902
