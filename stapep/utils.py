@@ -11,6 +11,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 from rdkit import Chem
+from rdkit.Chem import Descriptors
 
 from stapep.params import amino_acid_dict, reversed_amino_acid_dict, li_dict, weight_dict, hydrophobic_dict
 
@@ -85,6 +86,10 @@ class ProtParamsSeq(object):
             Calculate Kyte & Doolittle index of hydrophobicity of sequence.
             DOI: 10.1016/0022-2836(82)90515-0.
         '''
+        for aa in self.seq_to_list:
+            if aa not in hydrophobic_dict.keys():
+                raise ValueError(f'{aa} is not a valid amino acid.')
+
         hydrophobic_index_list = [hydrophobic_dict[aa] for aa in self.seq_to_list if aa not in ['Ac', 'NH2']]
         return np.mean(hydrophobic_index_list)
 
@@ -93,6 +98,10 @@ class ProtParamsSeq(object):
         '''
             Calculate the weight of peptide.
         '''
+        for aa in self.seq_to_list:
+            if aa not in weight_dict.keys():
+                raise ValueError(f'{aa} is not a valid amino acid.')
+
         weights = weight_dict
         water = 18.02
         carbon = 12.01
@@ -114,6 +123,10 @@ class ProtParamsSeq(object):
             Return the lyticity index of sequence.
 
         '''
+        for aa in self.seq_to_list:
+            if aa not in self.li_dict.keys():
+                raise ValueError(f'{aa} is not a valid amino acid.')
+
         width_list = []
         nodes = [s for s in self.seq_to_list if s in self.li_dict]
         h_dict = dict(self.li_dict)
@@ -476,6 +489,13 @@ class PhysicochemicalPredictor(MDAnalysisHandler):
             return: float
         '''
         return np.mean(self._get_molsurf()) # slowly method
+
+    def calc_weight(self, input_file: str) -> float:
+        '''
+            Calculate weight from MD trajectory
+            return: float
+        '''
+        return Descriptors.MolWt(Chem.MolFromSmiles(self.extract_2d_structure(input_file)))
 
     def calc_psa(self, input_file, obj_list=None, include_SandP = None, cmpd_name = None, atom_to_remove = None, **kwargs):    #TODO check that it is always consistently called 'psa3d' not 3dpsa or others
         """ ###TODO modify documentation
