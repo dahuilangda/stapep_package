@@ -564,8 +564,10 @@ class SeqPreProcessing(object):
         self.aa_reversed_dict = reversed_amino_acid_dict
 
     def _seq_to_list(self, seq: str) -> list[str]:
-        re_aa = re.compile(r'(S3|S5|S8|R3|R5|R8|Aib|Ac|NH2|[A-Z]|[a-z]|[0-9])')
+        # 需要增加-X-的判断, 比如'RK-M1R-QQ' -> ['R', 'K', 'M1R', 'Q', 'Q']
+        re_aa = re.compile(r'(-[\w\d]+-|S3|S5|S8|R3|R5|R8|Aib|Ac|NH2|[A-Z]|[a-z]|[0-9])')
         seq_to_list = re_aa.findall(seq)
+        seq_to_list = [x.replace('-', '') for x in seq_to_list]
         return [x.replace('X', 'S5') for x in seq_to_list]
     
     def is_stapled(self, seq: str) -> bool:
@@ -582,13 +584,15 @@ class SeqPreProcessing(object):
             if _s not in self.aa_reversed_dict.keys():
                 raise ValueError(f'{_s}{step+1} is not a valid amino acid')
 
-    def _one_to_three(self, seq: str) -> str:
+    def _one_to_three(self, seq: str, additional_residues: dict=None) -> str:
         '''
             Convert one letter amino acid to three letter amino acid
         '''
         seq_list = self._seq_to_list(seq)
-        self.check_seq_validation(seq)
-        three_letter_seq = [self.aa_reversed_dict[aa] for aa in seq_list]
+        if additional_residues is None:
+            self.check_seq_validation(seq)
+        
+        three_letter_seq = [self.aa_reversed_dict[aa] if aa in self.aa_reversed_dict else aa for aa in seq_list]
         return ' '.join(three_letter_seq)
 
 if __name__ == '__main__':

@@ -203,7 +203,11 @@ class PrepareProt(object):
 
         return os.path.join(pwd, self.output, "target.B99990001.pdb")
 
-    def _seq_to_pdb(self, method: str='alphafold', max_retries: int=3, local: bool=True) -> str:
+    def _seq_to_pdb(self, 
+                    method: str='alphafold', 
+                    max_retries: int=3, 
+                    local: bool=True,
+                    additional_residues: dict=None) -> str:
         '''
             Generate PDB file from sequence using ESMFold or homology modeling using Modeller
             DOI: 10.1101/2022.07.20.500902
@@ -214,6 +218,9 @@ class PrepareProt(object):
 
         # replace Non-standard amino acids with Alanine
         non_std_aa = ['B', 'Aib', 'X', 'S3', 'S5', 'S8', 'R3', 'R5', 'R8']
+        if additional_residues is not None:
+            non_std_aa.extend(list(additional_residues.keys()))
+
         std_seq_list = [seq if seq not in non_std_aa else 'A' for seq in seq_list]
         # remove ACE and NME if exist
         std_seq_list = [seq for seq in std_seq_list if seq not in ['ACE', 'NME', 'Ac', 'NH2']]
@@ -251,7 +258,9 @@ class PrepareProt(object):
                 else:
                     stapled_idx_list.append(step + 1)
 
-        seq_3_letter = self.seqpp._one_to_three(self.seq).split(' ')
+        seq_3_letter = self.seqpp._one_to_three(self.seq, additional_residues=additional_residues).split(' ')
+        if additional_residues is not None:
+            seq_3_letter = [additional_residues[seq][0] if seq in additional_residues else seq for seq in seq_3_letter]
         stapled_aa_type_list = [seq_3_letter[step] for step, seq in enumerate(seq_list) if seq in non_std_aa]
 
         new_pdb = []
@@ -285,7 +294,8 @@ class PrepareProt(object):
                         prmtop_vac: str='pep_vac.prmtop',
                         inpcrd_vac: str='pep_vac.inpcrd',
                         prmtop_sol: str='pep.prmtop',
-                        inpcrd_sol: str='pep.inpcrd') -> str:
+                        inpcrd_sol: str='pep.inpcrd',
+                        additional_residues: dict=None) -> str:
         '''
             Generate tleap file for AMBER
 
@@ -294,6 +304,9 @@ class PrepareProt(object):
                 inpcrd_vac: inpcrd file name of vacuum system (default: pep_vac.inpcrd)
                 prmtop_sol: prmtop file name of solvated system (default: pep.prmtop)
                 inpcrd_sol: inpcrd file name of solvated system (default: pep.inpcrd)
+                additional_residues: additional residues to be added to the system (default: None)
+                    For example, {'AIB': ('/path/to/AIB.prepin', '/path/to/frcmod.AIB')
+                                  'NLE': ('/path/to/NLE.prepin', '/path/to/frcmod.NLE')}
 
             Returns:
                 tleap file name
@@ -311,20 +324,30 @@ class PrepareProt(object):
                     'R8': 'PR8', 
                     'B': 'NLE', 
                     'Aib': 'AIB'}
+
         for residue, prefix in residues.items():
             if residue in self.seqpp._seq_to_list(self.seq):
                 prepin_file = f"{os.path.dirname(os.path.realpath(__file__))}/templates/{prefix}/{prefix.lower()}.prepin"
                 frcmod_file = f"{os.path.dirname(os.path.realpath(__file__))}/templates/{prefix}/frcmod.{prefix.lower()}"
                 lines.extend((f'loadAmberPrep {prepin_file}', f'loadAmberParams {frcmod_file}'))
 
+        if additional_residues is not None:
+            for residue, prefix in additional_residues.items():
+                residues[residue] = prefix
+                additional_prepin = additional_residues[residue][0]
+                additional_prepin = os.path.abspath(additional_prepin)
+                additional_frcmod = additional_residues[residue][1]
+                additional_frcmod = os.path.abspath(additional_frcmod)
+                lines.extend((f'loadAmberPrep {additional_prepin}', f'loadAmberParams {additional_frcmod}'))
+
         if self.method is None:
-            lines.append('pep = sequence { ' + self.seqpp._one_to_three(self.seq) + ' }')
+            lines.append('pep = sequence { ' + self.seqpp._one_to_three(self.seq, additional_residues=additional_residues) + ' }')
         elif self.method == 'alphafold':
-            pdb_file = self._seq_to_pdb(method='alphafold', local=True)
+            pdb_file = self._seq_to_pdb(method='alphafold', local=True, additional_residues=additional_residues)
             base_pdb_file = os.path.basename(pdb_file)
             lines.append(f'pep = loadpdb {base_pdb_file}')
         elif self.method == 'modeller':
-            pdb_file = self._seq_to_pdb(method='modeller')
+            pdb_file = self._seq_to_pdb(method='modeller', additional_residues=additional_residues)
             base_pdb_file = os.path.basename(pdb_file)
             lines.append(f'pep = loadpdb {base_pdb_file}')
             
@@ -352,7 +375,8 @@ class PrepareProt(object):
                                     prmtop_vac: str='pep_vac.prmtop',
                                     inpcrd_vac: str='pep_vac.inpcrd',
                                     prmtop_sol: str='pep.prmtop',
-                                    inpcrd_sol: str='pep.inpcrd') -> None:
+                                    inpcrd_sol: str='pep.inpcrd',
+                                    additional_residues: dict=None) -> None:
         '''
             Generate prmtop and inpcrd file
 
@@ -361,6 +385,9 @@ class PrepareProt(object):
                 inpcrd_vac: inpcrd file name for vacuum (default: pep_vac.inpcrd)
                 prmtop_sol: prmtop file name for solvated (default: pep.prmtop)
                 inpcrd_sol: inpcrd file name for solvated (default: pep.inpcrd)
+                additional_residues: additional residues to be added to the system (default: None)
+                    For example, {'AIB': ('/path/to/AIB.prepin', '/path/to/frcmod.AIB')
+                                  'NLE': ('/path/to/NLE.prepin', '/path/to/frcmod.NLE')}
 
             Returns:
                 None
@@ -369,7 +396,9 @@ class PrepareProt(object):
             prmtop_vac=prmtop_vac,
             inpcrd_vac=inpcrd_vac,
             prmtop_sol=prmtop_sol,
-            inpcrd_sol=inpcrd_sol
+            inpcrd_sol=inpcrd_sol,
+            additional_residues=additional_residues,
+
         )
         base_tleap_file = os.path.basename(tleap_file)
         cmd = ['tleap', '-f', base_tleap_file]
