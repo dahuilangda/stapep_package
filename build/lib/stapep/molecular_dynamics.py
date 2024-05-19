@@ -259,8 +259,8 @@ class PrepareProt(object):
                     stapled_idx_list.append(step + 1)
 
         seq_3_letter = self.seqpp._one_to_three(self.seq, additional_residues=additional_residues).split(' ')
-        if additional_residues is not None:
-            seq_3_letter = [additional_residues[seq][0] if seq in additional_residues else seq for seq in seq_3_letter]
+        # if additional_residues is not None:
+        #     seq_3_letter = [additional_residues[seq][0] if seq in additional_residues else seq for seq in seq_3_letter]
         stapled_aa_type_list = [seq_3_letter[step] for step, seq in enumerate(seq_list) if seq in non_std_aa]
 
         new_pdb = []

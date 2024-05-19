@@ -576,12 +576,12 @@ class SeqPreProcessing(object):
         '''
         return len(set(self._seq_to_list(seq)) & set(['X', 'S3', 'S5', 'S8', 'R3', 'R5', 'R8'])) > 0
 
-    def check_seq_validation(self, seq: str) -> None:
+    def check_seq_validation(self, seq: str, additional_residues: dict=None) -> None:
         '''
             Check if sequence is valid
         '''
         for step, _s in enumerate(self._seq_to_list(seq)):
-            if _s not in self.aa_reversed_dict.keys():
+            if _s not in self.aa_reversed_dict.keys() and _s not in additional_residues.keys():
                 raise ValueError(f'{_s}{step+1} is not a valid amino acid')
 
     def _one_to_three(self, seq: str, additional_residues: dict=None) -> str:
@@ -589,8 +589,8 @@ class SeqPreProcessing(object):
             Convert one letter amino acid to three letter amino acid
         '''
         seq_list = self._seq_to_list(seq)
-        if additional_residues is None:
-            self.check_seq_validation(seq)
+        # if additional_residues is None:
+        self.check_seq_validation(seq, additional_residues=additional_residues)
         
         three_letter_seq = [self.aa_reversed_dict[aa] if aa in self.aa_reversed_dict else aa for aa in seq_list]
         return ' '.join(three_letter_seq)
