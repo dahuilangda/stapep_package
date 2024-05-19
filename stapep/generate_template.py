@@ -6,7 +6,7 @@ def read_molecule_from_pdb(pdb, template_smiles=None):
     """从PDB格式的文件中读取分子，并尝试重建键信息"""
     mol = Chem.MolFromPDBFile(pdb, sanitize=False, removeHs=False)
     if template_smiles:
-        ref_mol = Chem.MolFromSmiles('N=C(NCCC[C@H](N)C(=O)O)N[C@@H]1O[C@H](CO)[C@H](O)[C@H](O)[C@H]1O')
+        ref_mol = Chem.MolFromSmiles(template_smiles)
         ref_mol = Chem.AddHs(ref_mol)
         AllChem.AssignBondOrdersFromTemplate(ref_mol, mol)
     if mol:
