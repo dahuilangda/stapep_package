@@ -3,6 +3,9 @@ import numpy as np
 import pandas as pd
 import os
 import re
+
+from functools import wraps
+
 from Bio import SeqIO
 import pandas as pd
 import pytraj as pt
@@ -14,6 +17,19 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors
 
 from stapep.params import amino_acid_dict, reversed_amino_acid_dict, li_dict, weight_dict, hydrophobic_dict
+
+def proxy_decorator(proxy):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            os.environ['http_proxy'] = proxy
+            os.environ['https_proxy'] = proxy
+            result = func(*args, **kwargs)
+            os.environ['http_proxy'] = ''
+            os.environ['https_proxy'] = ''
+            return result
+        return wrapper
+    return decorator
 
 def timeout(seconds, error_message="Timeout Error: the cmd have not finished."):
     def decorated(func):
@@ -579,15 +595,26 @@ class PhysicochemicalPredictor(MDAnalysisHandler):
         pass
 
 class SeqPreProcessing(object):
-    def __init__(self):
+    def __init__(self, additional_residues: dict=None):
         self.aa_dict = amino_acid_dict
         self.aa_reversed_dict = reversed_amino_acid_dict
+        self.additional_residues = additional_residues
+
+        if self.additional_residues is not None:
+            if not isinstance(self.additional_residues, dict):
+                raise ValueError('additional_residues must be a dict')
+
+            # self.pattern_str = '(S3|S5|S8|R3|R5|R8|Aib|Ac|NH2|[A-Z]|[a-z]|[0-9]|' + '|'.join(self.additional_residues.keys()) + ')'
+            self.pattern_str = '('+'|'.join(self.additional_residues.keys()) + '|S3|S5|S8|R3|R5|R8|Aib|Ac|NH2|[A-Z]|[a-z]|[0-9])'
+        else:
+            self.pattern_str = '(S3|S5|S8|R3|R5|R8|Aib|Ac|NH2|[A-Z]|[a-z]|[0-9])'
 
     def _seq_to_list(self, seq: str) -> list[str]:
         # 需要增加-X-的判断, 比如'RK-M1R-QQ' -> ['R', 'K', 'M1R', 'Q', 'Q']
-        re_aa = re.compile(r'(-[\w\d]+-|S3|S5|S8|R3|R5|R8|Aib|Ac|NH2|[A-Z]|[a-z]|[0-9])')
+        # re_aa = re.compile(r'(S3|S5|S8|R3|R5|R8|Aib|Ac|NH2|[A-Z]|[a-z]|[0-9])')
+        re_aa = re.compile(r'' + self.pattern_str)
         seq_to_list = re_aa.findall(seq)
-        seq_to_list = [x.replace('-', '') for x in seq_to_list]
+        seq_to_list = [x.replace('-', '') for x in seq_to_list if x.strip() != '']
         return [x.replace('X', 'S5') for x in seq_to_list]
     
     def is_stapled(self, seq: str) -> bool:
@@ -596,21 +623,26 @@ class SeqPreProcessing(object):
         '''
         return len(set(self._seq_to_list(seq)) & set(['X', 'S3', 'S5', 'S8', 'R3', 'R5', 'R8'])) > 0
 
-    def check_seq_validation(self, seq: str, additional_residues: dict=None) -> None:
+    def check_seq_validation(self, seq: str) -> None:
         '''
             Check if sequence is valid
         '''
+        if self.additional_residues is None:
+            additional_residues = {}
+        else:
+            additional_residues = self.additional_residues
+
         for step, _s in enumerate(self._seq_to_list(seq)):
             if _s not in self.aa_reversed_dict.keys() and _s not in additional_residues.keys():
                 raise ValueError(f'{_s}{step+1} is not a valid amino acid')
 
-    def _one_to_three(self, seq: str, additional_residues: dict=None) -> str:
+    def _one_to_three(self, seq: str) -> str:
         '''
             Convert one letter amino acid to three letter amino acid
         '''
         seq_list = self._seq_to_list(seq)
         # if additional_residues is None:
-        self.check_seq_validation(seq, additional_residues=additional_residues)
+        self.check_seq_validation(seq)
         
         three_letter_seq = [self.aa_reversed_dict[aa] if aa in self.aa_reversed_dict else aa for aa in seq_list]
         return ' '.join(three_letter_seq)

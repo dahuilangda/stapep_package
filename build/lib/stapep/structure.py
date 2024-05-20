@@ -116,12 +116,12 @@ class Structure(object):
             Returns:
                 str: The path to the generated PDB file.
         '''
-        spp = SeqPreProcessing()
+        spp = SeqPreProcessing(additional_residues=additional_residues)
         spp.check_seq_validation(seq)
         # get absolute path of template pdb file
         template_pdb = os.path.abspath(template_pdb)
         pp = PrepareProt(seq, self.tmp_dir, method='modeller', template_pdb_file_path=template_pdb)
-        pp._gen_prmtop_and_inpcrd_file(additional_residues=additional_residues)
+        pp._gen_prmtop_and_inpcrd_file()
         self._short_time_simulation()
         self._get_opt_structure(seq, output_pdb)
         if not self.save_tmp_dir:
@@ -131,7 +131,8 @@ class Structure(object):
     def de_novo_3d_structure(self, 
                              seq: str, 
                              output_pdb: str,
-                             additional_residues: dict=None):
+                             additional_residues: dict=None,
+                             proxy=None):
         '''
             Generate a de novo 3D structure of a peptide using ESMFold.
 
@@ -145,10 +146,10 @@ class Structure(object):
             Returns:
                 str: The path to the generated PDB file.
         '''
-        spp = SeqPreProcessing()
+        spp = SeqPreProcessing(additional_residues=additional_residues)
         spp.check_seq_validation(seq)
-        pp = PrepareProt(seq, self.tmp_dir, method='alphafold')
-        pp._gen_prmtop_and_inpcrd_file(additional_residues=additional_residues)
+        pp = PrepareProt(seq, self.tmp_dir, method='alphafold', additional_residues=additional_residues)
+        pp._gen_prmtop_and_inpcrd_file()
         self._short_time_simulation()
         self._get_opt_structure(seq, output_pdb)
         if not self.save_tmp_dir:
@@ -175,10 +176,10 @@ class Structure(object):
             Note:
                 This method is not recommended as the generated structure is not stable.
         '''
-        spp = SeqPreProcessing()
+        spp = SeqPreProcessing(additional_residues=additional_residues)
         spp.check_seq_validation(seq)
         pp = PrepareProt(seq, self.tmp_dir, method=None)
-        pp._gen_prmtop_and_inpcrd_file(additional_residues=additional_residues)
+        pp._gen_prmtop_and_inpcrd_file()
         self._short_time_simulation()
         self._get_opt_structure(seq, output_pdb)
         if not self.save_tmp_dir:
