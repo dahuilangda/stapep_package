@@ -443,3 +443,54 @@ The feature importances suggest that the following factors are important for pre
 6.  **Isoelectric Point:** This is the pH at which a peptide has a net charge of zero. Peptides that have a neutral charge at physiological pH (7.4) tend to have better membrane permeability.
     
 7.  **Length, Aromaticity, Charge, Fraction Lysine, Fraction Arginine, and Num Hbonds:** These are other physicochemical properties of the peptide that may influence its membrane permeability. For example, peptides with a higher positive charge or higher fraction of basic amino acids such as lysine and arginine may have better membrane permeability due to interactions with the negatively charged cell membrane. Peptides with a higher number of hydrogen bonds may also have better membrane permeability due to stronger interactions with the cell membrane.
+
+### Experimental Conponents: Operations on Peptides Containing New Non-Standard Amino Acids
+Taking glycosylated arginine peptides as an example, we provide a quick and simple method to obtain the parameters of non-standard amino acids. Based on the obtained parameters, subsequent operations such as 3D structure modeling, feature extraction, and machine learning can be performed.(Note: You should be careful to observe whether these parameters are reasonable in theory rather than using them without consideration.)
+
+```bash
+# Generate parameter of the glycosylated arginine peptide using the following command
+python -m stapep.generate_template \
+    --smiles "N=C(NCCC[C@H](N)C(=O)O)N[C@@H]1O[C@H](CO)[C@H](O)[C@H](O)[C@H]1O" \
+    --name "R1A" \
+    --output "./data/R1A" \
+    --charge 0.0
+
+args:
+    --smiles: SMILES of the non-standard amino acid
+    --name: name of the non-standard amino acid (Only 3 characters are allowed)
+    --output: output directory
+    --charge: charge of the non-standard amino acid (default: 0.0)
+```
+
+The SMILES structure of the non-standard amino acid should include the complete structure, including COOH and NH2 on the main chain, as well as all atoms on the side chain. As shown in the figure below.
+
+![R1A](https://github.com/dahuilangda/stapep_code/blob/master/example/img/non_standard_aa.png)
+
+After running, you can find the generated parameter files in the specified directory as shown below.
+1. ./data/R1A/R1A.prepin
+2. ./data/R1A/frcmod.R1A
+
+Next, we use the generated parameters for 3D structure modeling, feature extraction, machine learning, and other operations.
+
+1. Generate the 3D structure of the glycosylated arginine peptide
+```python
+from stapep.structure import Structure
+
+# Import the additional_residues to specify the path of the parameter file
+# R1A is the name of the non-standard amino acid
+# data/R1A/R1A.prepin is the path of the prepin file
+# data/R1A/frcmod.R1A is the path of the frcmod file
+additional_residues = {
+    'R1A': (
+        'data/R1A/R1A.prepin',
+        'data/R1A/frcmod.R1A',
+    )
+}
+
+seq = 'Ac-BATPRRR-BLBR-R1A-FKRLQ' # Define the peptide sequence
+st = Structure(verbose=True) # Initialize the structure class
+
+st.de_novo_3d_structure(seq=seq, 
+                        output_pdb='data/R1A_peptide.pdb', 
+                        additional_residues=additional_residues)
+```
