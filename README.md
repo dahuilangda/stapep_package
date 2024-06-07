@@ -494,3 +494,106 @@ st.de_novo_3d_structure(seq=seq,
                         output_pdb='data/R1A_peptide.pdb', 
                         additional_residues=additional_residues)
 ```
+![R1A_peptide](https://github.com/dahuilangda/stapep_package/blob/master/stapep/example/img/peptide_within_non_standard_aa.png)
+
+2. Molecular dynamics simulation of the glycosylated arginine peptide
+```python
+from stapep.molecular_dynamics import PrepareProt, Simulation
+
+output = 'data/R1A'
+additional_residues = {
+    'R1A': (
+        'data/R1A/R1A.prepin',
+        'data/R1A/frcmod.R1A',
+    )
+}
+
+# Prepare the protein for molecular dynamics simulation
+pp = PrepareProt(seq, output, method='alphafold', additional_residues=additional_residues)
+pp._gen_prmtop_and_inpcrd_file()
+
+sim = Simulation(output)
+sim.setup(
+        type='implicit', # 'explicit' or 'implicit'
+        solvent='water', # 'water' or 'chloroform'
+        temperature=300, # Kelvin
+        friction=1, # ps^-1
+        timestep=2, # fs
+        interval=100, # ps
+        nsteps=500000 # 1 ns
+    )
+sim.minimize()
+sim.run()
+```
+
+3. Feature extraction of trajectory of molecular dynamics simulation of the glycosylated arginine peptide
+```python
+import os
+from stapep.utils import PhysicochemicalPredictor
+
+# initialize the PhysicochemicalPredictor class, which automatically loads trajectory using pytraj.
+pcp = PhysicochemicalPredictor(sequence=seq, 
+                                topology_file=os.path.join(output, 'pep_vac.prmtop'),
+                                trajectory_file=os.path.join(output, 'traj.dcd'),
+                                start_frame=0)
+
+# You can call the calc_helix_percent, calc_extend_percent, and calc_loop_percent methods 
+# to respectively calculate the percentages of helix, strand, and coil in the secondary structure.
+
+print('helix percent: ', pcp.calc_helix_percent())
+print('sheet percent: ', pcp.calc_extend_percent())
+print('loop percent: ', pcp.calc_loop_percent())
+
+# save the mean structure of the trajectory
+pcp._save_mean_structure(os.path.join(output, 'mean_structure.pdb'))
+
+# calculate the weight of the protein using the mean structure
+print('weight', pcp.calc_weight(os.path.join(output, 'mean_structure.pdb')))
+# calculate the Mean B-factor, Molecular Surface, Mean Gyration Radius, Hydrophobic Index, and 3D-PSA
+print('mean bfactor: ', pcp.calc_mean_bfactor())
+print('mol surf: ', pcp.calc_mean_molsurf())
+print('mean gyrate: ', pcp.calc_mean_gyrate())
+print('hydrophobic index: ', pcp.calc_hydrophobic_index(os.path.join(output, 'mean_structure.pdb')))
+print('psa: ', pcp.calc_psa(os.path.join(output, 'mean_structure.pdb')))
+print('total number of hydrogen bonds: ', pcp.calc_n_hbonds())
+
+# Output:
+helix percent:  0.20142222222222222
+sheet percent:  4.444444444444444e-05
+loop percent:  0.7985333333333332
+weight 2414.0389999999984
+mean bfactor:  190.2779644700375
+mol surf:  1830.2296376834504
+mean gyrate:  9.026684269192096
+hydrophobic index:  -0.7733333333333332
+psa:  1002.5029907226562
+total number of hydrogen bonds:  9
+```
+
+4. Feature extraction of sequence of the glycosylated arginine peptide
+```python
+from stapep.utils import ProtParamsSeq
+# initialize the ProtParamsSeq class
+pps = ProtParamsSeq(seq)
+# You can call the following methods to calculate the physicochemical properties of the peptide.
+# length, weight, hydrophobicity index, charge, charge density, aromaticity, fraction of arginine, fraction of lysine, lyticity index, and isoelectric point.
+print('length: ', pps.seq_length)
+# print('weight: ', pps.weight) # This method is not implemented yet if the sequence contains non-standard amino acids.
+# print('hydrophobicity index: ', pps.hydrophobicity_index) # This method is not implemented yet if the sequence contains non-standard amino acids.
+print('charge', pps.calc_charge(pH=7.0)) # Be careful if the sequence contains non-standard amino acids, the charge will be calculated based on the standard amino acids.
+# print('charge_density', pps.calc_charge_density(pH=7.0)) # The charge density is calculated by dividing the charge by the length of the peptide.
+print('aromaticity', pps.aromaticity) # Be careful if the sequence contains non-standard amino acids, the aromaticity will be calculated based on the standard amino acids.
+print('fraction_arginine', pps.fraction_arginine)
+print('fraction_lysine', pps.fraction_lysine)
+# print('lyticity index: ', pps.lyticity_index) # This method is not implemented yet if the sequence contains non-standard amino acids.
+print('isoelectric_point: ', pps.isoelectric_point) # Be careful if the sequence contains non-standard amino acids, the isoelectric point will be calculated based on the standard amino acids.
+
+# Output:
+length:  19
+charge 6.996
+aromaticity 0.05263157894736842
+fraction_arginine 0.3157894736842105
+fraction_lysine 0.05263157894736842
+isoelectric_point:  11.999967765808105
+```
+_Demo: examples/ex4_non_standard_amino_acid.ipynb_
