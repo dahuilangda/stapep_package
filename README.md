@@ -464,7 +464,7 @@ args:
 
 The SMILES structure of the non-standard amino acid should include the complete structure, including COOH and NH2 on the main chain, as well as all atoms on the side chain. As shown in the figure below.
 
-![R1A](https://github.com/dahuilangda/stapep_code/blob/master/example/img/non_standard_aa.png)
+![R1A](https://github.com/dahuilangda/stapep_package/blob/master/stapep/example/img/non_standard_aa.png)
 
 After running, you can find the generated parameter files in the specified directory as shown below.
 1. ./data/R1A/R1A.prepin
