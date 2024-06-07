@@ -444,7 +444,7 @@ The feature importances suggest that the following factors are important for pre
     
 7.  **Length, Aromaticity, Charge, Fraction Lysine, Fraction Arginine, and Num Hbonds:** These are other physicochemical properties of the peptide that may influence its membrane permeability. For example, peptides with a higher positive charge or higher fraction of basic amino acids such as lysine and arginine may have better membrane permeability due to interactions with the negatively charged cell membrane. Peptides with a higher number of hydrogen bonds may also have better membrane permeability due to stronger interactions with the cell membrane.
 
-### Experimental Conponents: Operations on Peptides Containing New Non-Standard Amino Acids
+### Experimental Feature: Handling Peptides with Novel Non-Standard Amino Acids
 Taking glycosylated arginine peptides as an example, we provide a quick and simple method to obtain the parameters of non-standard amino acids. Based on the obtained parameters, subsequent operations such as 3D structure modeling, feature extraction, and machine learning can be performed.(Note: You should be careful to observe whether these parameters are reasonable in theory rather than using them without consideration.)
 
 ```bash
