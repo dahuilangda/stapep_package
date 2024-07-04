@@ -103,7 +103,7 @@ class ProtParamsSeq(object):
             DOI: 10.1016/0022-2836(82)90515-0.
         '''
         for aa in self.seq_to_list:
-            if aa not in hydrophobic_dict.keys():
+            if aa not in hydrophobic_dict.keys() and aa not in ['Ac', 'NH2']:
                 raise ValueError(f'{aa} is not a valid amino acid.')
 
         hydrophobic_index_list = [hydrophobic_dict[aa] for aa in self.seq_to_list if aa not in ['Ac', 'NH2']]
@@ -140,7 +140,7 @@ class ProtParamsSeq(object):
 
         '''
         for aa in self.seq_to_list:
-            if aa not in self.li_dict.keys():
+            if aa not in self.li_dict.keys() and aa not in ['Ac', 'NH2']:
                 raise ValueError(f'{aa} is not a valid amino acid.')
 
         width_list = []
