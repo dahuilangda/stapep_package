@@ -115,7 +115,7 @@ class ProtParamsSeq(object):
             Calculate the weight of peptide.
         '''
         for aa in self.seq_to_list:
-            if aa not in weight_dict.keys():
+            if aa not in weight_dict.keys() and aa not in ['Ac', 'NH2']:
                 raise ValueError(f'{aa} is not a valid amino acid.')
 
         weights = weight_dict
