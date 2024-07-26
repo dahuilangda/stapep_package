@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 
-from stapep.params import amino_acid_dict, reversed_amino_acid_dict, li_dict, weight_dict, hydrophobic_dict
+from stapep.params import amino_acid_dict, reversed_amino_acid_dict, li_dict, weight_dict, hydrophobic_dict, hydrophilic_residues
 
 def proxy_decorator(proxy):
     def decorator(func):
@@ -78,11 +78,39 @@ class ProtParamsSeq(object):
         Methods:
             1. plot_lyticity_index: plot the lytic index of sequence, and return the lyticity index.
     '''
-    def __init__(self, seq: str) -> None:
+    def __init__(self, seq: str, additional_params=None) -> None:
+        '''
+            Args:
+                seq: sequence of peptide.
+                additional_params: additional residues to update li_dict and hydrophobic_dict.
+                    eg: {
+                            'lyticity_index': {'Aib': 8.493, 'NLE': 24.442},
+                            'hydrophobicity_index': {'Aib': 8.493, 'NLE': 24.442},
+                            'weight': {'Aib': 8.493, 'NLE': 24.442},
+                            'hydrophilic_residues': {'Aib': False, 'NLE': True}
+                        }
+        '''
+
+
         self.seq = seq
         seqpp = SeqPreProcessing()
         self.seq_to_list = seqpp._seq_to_list(self.seq)
+        self.weight_dict = weight_dict
         self.li_dict = li_dict
+        self.hydrophobic_dict = hydrophobic_dict
+        self.hydrophilic_residues = hydrophilic_residues
+
+        if additional_params is not None:
+            if 'lyticity_index' in additional_params.keys():
+                self.li_dict.update(additional_params['lyticity_index'])
+            if 'hydrophobicity_index' in additional_params.keys():
+                self.hydrophobic_dict.update(additional_params['hydrophobicity_index'])
+            if 'weight' in additional_params.keys():
+                self.weight_dict.update(additional_params['weight'])
+            if 'hydrophilic_residues' in additional_params.keys():
+                for k, v in additional_params['hydrophilic_residues'].items():
+                    if v:
+                        self.hydrophilic_residues.append(k)
 
     @property
     def seq_length(self) -> int:
@@ -103,10 +131,10 @@ class ProtParamsSeq(object):
             DOI: 10.1016/0022-2836(82)90515-0.
         '''
         for aa in self.seq_to_list:
-            if aa not in hydrophobic_dict.keys() and aa not in ['Ac', 'NH2']:
+            if aa not in self.hydrophobic_dict.keys() and aa not in ['Ac', 'NH2']:
                 raise ValueError(f'{aa} is not a valid amino acid.')
 
-        hydrophobic_index_list = [hydrophobic_dict[aa] for aa in self.seq_to_list if aa not in ['Ac', 'NH2']]
+        hydrophobic_index_list = [self.hydrophobic_dict[aa] for aa in self.seq_to_list if aa not in ['Ac', 'NH2']]
         return np.mean(hydrophobic_index_list)
 
     @property
@@ -138,20 +166,59 @@ class ProtParamsSeq(object):
 
             Return the lyticity index of sequence.
 
+            copy from https://www.walenskylab.org/hnm-landing
         '''
-        for aa in self.seq_to_list:
+        sequence = self.seq_to_list
+        
+        for aa in sequence:
             if aa not in self.li_dict.keys() and aa not in ['Ac', 'NH2']:
                 raise ValueError(f'{aa} is not a valid amino acid.')
 
-        width_list = []
-        nodes = [s for s in self.seq_to_list if s in self.li_dict]
-        h_dict = dict(self.li_dict)
-        for idx in range(len(nodes)-3):
-            if (nodes[idx].split('_')[0] in self.li_dict) and (nodes[idx+3].split('_')[0] in self.li_dict):
-                width_list.append((h_dict[nodes[idx].split('_')[0]]+h_dict[nodes[idx+3].split('_')[0]])/5)
-            if idx + 4 < len(nodes) and (nodes[idx].split('_')[0] in self.li_dict) and (nodes[idx + 4].split('_')[0] in self.li_dict):
-                width_list.append((h_dict[nodes[idx].split('_')[0]]+h_dict[nodes[idx+4].split('_')[0]])/5)
-        return np.sum(width_list)
+        sequence = [aa for aa in sequence if aa not in ['Ac', 'NH2']]
+
+        # Assign lyticity values to each residue in the peptide sequence
+        lyticity_assignment = [self.li_dict[aa] for aa in sequence]
+        
+        # Make array of i+4 sums
+        i_plus_4_sums = []
+        for i in range(len(sequence) - 4):
+            if sequence[i] not in self.hydrophilic_residues and sequence[i + 4] not in self.hydrophilic_residues:
+                i_plus_4_sums.append(lyticity_assignment[i] + lyticity_assignment[i + 4])
+        
+        # Make array of i+3 sums
+        i_plus_3_sums = []
+        for i in range(len(sequence) - 3):
+            if sequence[i] not in self.hydrophilic_residues and sequence[i + 3] not in self.hydrophilic_residues:
+                i_plus_3_sums.append(lyticity_assignment[i] + lyticity_assignment[i + 3])
+        
+        # Sum everything together to get the final lyticity value
+        total_lyticity = sum(i_plus_4_sums) + sum(i_plus_3_sums)
+        
+        return total_lyticity
+
+    # @property
+    # def lyticity_index(self) -> float:
+    #     '''
+    #         Mourtada, Rida, et al. 
+    #         "Design of stapled antimicrobial peptides that are stable, nontoxic and kill antibiotic-resistant bacteria in mice." 
+    #         Nature biotechnology 37.10 (2019): 1186-1197.
+
+    #         Return the lyticity index of sequence.
+
+    #     '''
+    #     for aa in self.seq_to_list:
+    #         if aa not in self.li_dict.keys() and aa not in ['Ac', 'NH2']:
+    #             raise ValueError(f'{aa} is not a valid amino acid.')
+
+    #     width_list = []
+    #     nodes = [s for s in self.seq_to_list if s in self.li_dict]
+    #     h_dict = dict(self.li_dict)
+    #     for idx in range(len(nodes)-3):
+    #         if (nodes[idx].split('_')[0] in self.li_dict) and (nodes[idx+3].split('_')[0] in self.li_dict):
+    #             width_list.append((h_dict[nodes[idx].split('_')[0]]+h_dict[nodes[idx+3].split('_')[0]])/5)
+    #         if idx + 4 < len(nodes) and (nodes[idx].split('_')[0] in self.li_dict) and (nodes[idx + 4].split('_')[0] in self.li_dict):
+    #             width_list.append((h_dict[nodes[idx].split('_')[0]]+h_dict[nodes[idx+4].split('_')[0]])/5)
+    #     return np.sum(width_list)
 
     def calc_charge(self, pH: float=7.0, amide: bool=False) -> float:
         # https://github.com/alexarnimueller/modlAMP/blob/master/modlamp/descriptors.py
@@ -235,7 +302,7 @@ class ProtParamsSeq(object):
 
         aa_content = _count_aas()
         return (aa_content['F'] + aa_content['W'] + aa_content['Y']) / self.seq_length
-    
+
     def plot_lyticity_index(self, output_path: str) -> float:
         '''
             Mourtada, Rida, et al. 
@@ -249,36 +316,96 @@ class ProtParamsSeq(object):
                 lyticity_index: lyticity index of sequence.
         '''
 
+        sequence = [aa for aa in self.seq_to_list if aa not in ['Ac', 'NH2']]
+
         G = nx.Graph()
         h_dict = dict(self.li_dict)
-        nodes = [f'{s}_{step}' for step,s in enumerate(self.seq_to_list) if s in self.li_dict]
-        labels = {f'{s}_{step}':r'$%s_{%s}$'%(s, step+1) for step, s in enumerate(self.seq_to_list) if s in self.li_dict}
-        G.add_nodes_from(nodes)
+        nodes = [f'{s}_{step}' for step,s in enumerate(sequence) if s in self.li_dict]
+        labels = {f'{s}_{step}':r'$%s_{%s}$'%(s, step+1) for step, s in enumerate(sequence) if s in self.li_dict}
+        
+        connected_nodes = set()
         width_list = []
-        for idx in range(len(nodes)-3):
-            if (nodes[idx].split('_')[0] in self.li_dict) and (nodes[idx+3].split('_')[0] in self.li_dict):
-                print(f'{nodes[idx]} {nodes[idx+3]}')
+        
+        # Create edges and calculate widths
+        for idx in range(len(nodes) - 3):
+            node1 = nodes[idx].split('_')[0]
+            node2 = nodes[idx+3].split('_')[0]
+            if node1 in self.li_dict and node2 in self.li_dict and node1 not in self.hydrophilic_residues and node2 not in self.hydrophilic_residues:
                 G.add_edge(nodes[idx], nodes[idx+3])
-                width_list.append((h_dict[nodes[idx].split('_')[0]]+h_dict[nodes[idx+3].split('_')[0]])/5)
-            if idx + 4 < len(nodes) and (nodes[idx].split('_')[0] in self.li_dict) and (nodes[idx + 4].split('_')[0] in self.li_dict):
-                print(f'{nodes[idx]} {nodes[idx+4]}')
-                G.add_edge(nodes[idx], nodes[idx+4])
-                width_list.append((h_dict[nodes[idx].split('_')[0]]+h_dict[nodes[idx+4].split('_')[0]])/5)
-
+                width_list.append((h_dict[node1] + h_dict[node2]) / 5)
+                connected_nodes.add(nodes[idx])
+                connected_nodes.add(nodes[idx+3])
+                
+            if idx + 4 < len(nodes):
+                node3 = nodes[idx+4].split('_')[0]
+                if node1 in self.li_dict and node3 in self.li_dict and node1 not in self.hydrophilic_residues and node3 not in self.hydrophilic_residues:
+                    G.add_edge(nodes[idx], nodes[idx+4])
+                    width_list.append((h_dict[node1] + h_dict[node3]) / 5)
+                    connected_nodes.add(nodes[idx])
+                    connected_nodes.add(nodes[idx+4])
+        
+        # Only add nodes that have connections
+        G = G.subgraph(connected_nodes)
+        
         position = nx.spring_layout(G)
         fig, ax = plt.subplots(1, 1, figsize=(20, 12))
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_visible(False)
         ax.spines['top'].set_visible(False)
         ax.spines['bottom'].set_visible(False)
-        nx.draw_networkx_nodes(G, position, node_color='black', alpha = 1.0, ax=ax, node_size=2200)
-        nx.draw_networkx_nodes(G, position, node_color='bisque', alpha = 1.0, ax=ax, node_size=2000)
-        nx.draw_networkx_edges(G, position, edge_color='orangered', alpha = 1, ax=ax, width=width_list)
-        nx.draw_networkx_labels(G, position, labels, font_size=16, ax=ax)
-        li = sum(width_list*5)
-        plt.text(0.1, 1.0, 'Lyticity index: '+'%.2f'%li, fontsize=20, ha='center', va='center', transform=ax.transAxes)
+        nx.draw_networkx_nodes(G, position, node_color='black', alpha=1.0, ax=ax, node_size=2200)
+        nx.draw_networkx_nodes(G, position, node_color='bisque', alpha=1.0, ax=ax, node_size=2000)
+        nx.draw_networkx_edges(G, position, edge_color='orangered', alpha=1, ax=ax, width=width_list)
+        nx.draw_networkx_labels(G, position, {node: labels[node] for node in G.nodes()}, font_size=16, ax=ax)
+        
+        li = sum(width_list) * 5
+        plt.text(0.1, 1.0, 'Lyticity index: ' + '%.2f' % li, fontsize=20, ha='center', va='center', transform=ax.transAxes)
         plt.savefig(f'{output_path}', format='SVG')
         return li
+
+    # def plot_lyticity_index(self, output_path: str) -> float:
+    #     '''
+    #         Mourtada, Rida, et al. 
+    #         "Design of stapled antimicrobial peptides that are stable, nontoxic and kill antibiotic-resistant bacteria in mice." 
+    #         Nature biotechnology 37.10 (2019): 1186-1197.
+
+    #         Args:
+    #             output_path: save path of plot.
+            
+    #         Return:
+    #             lyticity_index: lyticity index of sequence.
+    #     '''
+
+    #     G = nx.Graph()
+    #     h_dict = dict(self.li_dict)
+    #     nodes = [f'{s}_{step}' for step,s in enumerate(self.seq_to_list) if s in self.li_dict]
+    #     labels = {f'{s}_{step}':r'$%s_{%s}$'%(s, step+1) for step, s in enumerate(self.seq_to_list) if s in self.li_dict}
+    #     G.add_nodes_from(nodes)
+    #     width_list = []
+    #     for idx in range(len(nodes)-3):
+    #         if (nodes[idx].split('_')[0] in self.li_dict) and (nodes[idx+3].split('_')[0] in self.li_dict):
+    #             print(f'{nodes[idx]} {nodes[idx+3]}')
+    #             G.add_edge(nodes[idx], nodes[idx+3])
+    #             width_list.append((h_dict[nodes[idx].split('_')[0]]+h_dict[nodes[idx+3].split('_')[0]])/5)
+    #         if idx + 4 < len(nodes) and (nodes[idx].split('_')[0] in self.li_dict) and (nodes[idx + 4].split('_')[0] in self.li_dict):
+    #             print(f'{nodes[idx]} {nodes[idx+4]}')
+    #             G.add_edge(nodes[idx], nodes[idx+4])
+    #             width_list.append((h_dict[nodes[idx].split('_')[0]]+h_dict[nodes[idx+4].split('_')[0]])/5)
+
+    #     position = nx.spring_layout(G)
+    #     fig, ax = plt.subplots(1, 1, figsize=(20, 12))
+    #     ax.spines['right'].set_visible(False)
+    #     ax.spines['left'].set_visible(False)
+    #     ax.spines['top'].set_visible(False)
+    #     ax.spines['bottom'].set_visible(False)
+    #     nx.draw_networkx_nodes(G, position, node_color='black', alpha = 1.0, ax=ax, node_size=2200)
+    #     nx.draw_networkx_nodes(G, position, node_color='bisque', alpha = 1.0, ax=ax, node_size=2000)
+    #     nx.draw_networkx_edges(G, position, edge_color='orangered', alpha = 1, ax=ax, width=width_list)
+    #     nx.draw_networkx_labels(G, position, labels, font_size=16, ax=ax)
+    #     li = sum(width_list*5)
+    #     plt.text(0.1, 1.0, 'Lyticity index: '+'%.2f'%li, fontsize=20, ha='center', va='center', transform=ax.transAxes)
+    #     plt.savefig(f'{output_path}', format='SVG')
+    #     return li
 
     @property
     def isoelectric_point(self) -> float:
