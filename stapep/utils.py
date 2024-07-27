@@ -87,13 +87,32 @@ class ProtParamsSeq(object):
                             'lyticity_index': {'Aib': 8.493, 'NLE': 24.442},
                             'hydrophobicity_index': {'Aib': 8.493, 'NLE': 24.442},
                             'weight': {'Aib': 8.493, 'NLE': 24.442},
-                            'hydrophilic_residues': {'Aib': False, 'NLE': True}
+                            'hydrophilic_residues': {'Aib': False, 'NLE': True},
                         }
         '''
+        
+        additional_residues = {}
+        if additional_params is not None:
+            if 'lyticity_index' in additional_params.keys():
+                for k, v in additional_params['lyticity_index'].items():
+                    if v:
+                        additional_residues[k] = None
+            if 'hydrophobicity_index' in additional_params.keys():
+                for k, v in additional_params['hydrophobicity_index'].items():
+                    if v:
+                        additional_residues[k] = None
+            if 'weight' in additional_params.keys():
+                for k, v in additional_params['weight'].items():
+                    if v:
+                        additional_residues[k] = None
+            if 'hydrophilic_residues' in additional_params.keys():
+                for k, v in additional_params['hydrophilic_residues'].items():
+                    if v:
+                        additional_residues[k] = None
 
 
         self.seq = seq
-        seqpp = SeqPreProcessing()
+        seqpp = SeqPreProcessing(additional_residues=additional_residues)
         self.seq_to_list = seqpp._seq_to_list(self.seq)
         self.weight_dict = weight_dict
         self.li_dict = li_dict
