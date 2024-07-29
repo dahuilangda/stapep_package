@@ -90,8 +90,7 @@ class ProtParamsSeq(object):
                             'hydrophilic_residues': {'Aib': False, 'NLE': True},
                         }
         '''
-        # additional_residues = additional_params['additional_residues'] if additional_params is not None and 'hydrophilic_residues' in additional_params.keys() else {}
-        # additional_residues是不重复的ly_dict、hydrophobic_dict、weight_dict、hydrophilic_residues
+        
         additional_residues = {}
         if additional_params is not None:
             if 'lyticity_index' in additional_params.keys():
@@ -379,9 +378,171 @@ class ProtParamsSeq(object):
         nx.draw_networkx_labels(G, position, {node: labels[node] for node in G.nodes()}, font_size=16, ax=ax)
         
         li = sum(width_list) * 5
+        # li = self.lyticity_index
         plt.text(0.1, 1.0, 'Lyticity index: ' + '%.2f' % li, fontsize=20, ha='center', va='center', transform=ax.transAxes)
         plt.savefig(f'{output_path}', format='SVG')
         return li
+
+
+    def plot_lyticity_index_interactive(self, output_path: str) -> float:
+
+        '''
+            Mourtada, Rida, et al. 
+            "Design of stapled antimicrobial peptides that are stable, nontoxic and kill antibiotic-resistant bacteria in mice." 
+            Nature biotechnology 37.10 (2019): 1186-1197.
+
+            Args:
+                output_path: save path of plot.
+            
+            Return:
+                lyticity_index: lyticity index of sequence.
+        '''
+    
+        try:
+            import networkx as nx
+            from pyvis.network import Network
+        except ImportError:
+            raise ImportError('Please install networkx and pyvis to use this function. eg: pip install networkx pyvis')
+
+        sequence = [aa for aa in self.seq_to_list if aa not in ['Ac', 'NH2']]
+
+        G = nx.Graph()
+        h_dict = dict(self.li_dict)
+        nodes = [f'{s}_{step}' for step, s in enumerate(sequence) if s in self.li_dict]
+        labels = {f'{s}_{step}': f'{s}{step+1}' for step, s in enumerate(sequence) if s in self.li_dict}
+        
+        connected_nodes = set()
+        width_list = []
+        
+        # Create edges and calculate widths
+        for idx in range(len(nodes) - 3):
+            node1 = nodes[idx].split('_')[0]
+            node2 = nodes[idx+3].split('_')[0]
+            if node1 in self.li_dict and node2 in self.li_dict and node1 not in self.hydrophilic_residues and node2 not in self.hydrophilic_residues:
+                G.add_edge(nodes[idx], nodes[idx+3])
+                width_list.append((h_dict[node1] + h_dict[node2]) / 5)
+                connected_nodes.add(nodes[idx])
+                connected_nodes.add(nodes[idx+3])
+                
+            if idx + 4 < len(nodes):
+                node3 = nodes[idx+4].split('_')[0]
+                if node1 in self.li_dict and node3 in self.li_dict and node1 not in self.hydrophilic_residues and node3 not in self.hydrophilic_residues:
+                    G.add_edge(nodes[idx], nodes[idx+4])
+                    width_list.append((h_dict[node1] + h_dict[node3]) / 5)
+                    connected_nodes.add(nodes[idx])
+                    connected_nodes.add(nodes[idx+4])
+        
+        # Only add nodes that have connections
+        G = G.subgraph(connected_nodes)
+        
+        net = Network(height='750px', width='100%', notebook=True)
+        
+        # Add nodes with labels and sizes
+        for node in G.nodes:
+            net.add_node(node, label=labels[node], size=20, title=labels[node])
+        
+        # Add edges with widths
+        for edge, width in zip(G.edges, width_list):
+            net.add_edge(edge[0], edge[1], width=width)
+        
+        # Save the network visualization to an HTML file
+        net.save_graph(output_path)
+
+        li = sum(width_list) * 5
+        return li
+
+
+    # def plot_lyticity_index_3d(self, output_path: str) -> float:
+    #     try:
+    #         from plotly.graph_objects import Scatter3d, Layout, Figure
+    #     except ImportError:
+    #         raise ImportError('Please install plotly to use this function. eg: pip install plotly')
+
+    #     sequence = [aa for aa in self.seq_to_list if aa not in ['Ac', 'NH2']]
+    #     G = nx.Graph()
+    #     h_dict = dict(self.li_dict)
+    #     nodes = [f'{s}_{step}' for step, s in enumerate(sequence) if s in self.li_dict]
+        
+    #     # Use HTML-like syntax for subscripts in labels
+    #     labels = {f'{s}_{step}': f'{s}<sub>{step + 1}</sub>' for step, s in enumerate(sequence) if s in self.li_dict}
+        
+    #     connected_nodes = set()
+    #     width_list = []
+        
+    #     # Create edges and calculate widths
+    #     for idx in range(len(nodes) - 3):
+    #         node1 = nodes[idx].split('_')[0]
+    #         node2 = nodes[idx + 3].split('_')[0]
+    #         if node1 in self.li_dict and node2 in self.li_dict and node1 not in self.hydrophilic_residues and node2 not in self.hydrophilic_residues:
+    #             G.add_edge(nodes[idx], nodes[idx + 3])
+    #             width_list.append((h_dict[node1] + h_dict[node2]) / 5)
+    #             connected_nodes.add(nodes[idx])
+    #             connected_nodes.add(nodes[idx + 3])
+                
+    #         if idx + 4 < len(nodes):
+    #             node3 = nodes[idx + 4].split('_')[0]
+    #             if node1 in self.li_dict and node3 in self.li_dict and node1 not in self.hydrophilic_residues and node3 not in self.hydrophilic_residues:
+    #                 G.add_edge(nodes[idx], nodes[idx + 4])
+    #                 width_list.append((h_dict[node1] + h_dict[node3]) / 5)
+    #                 connected_nodes.add(nodes[idx])
+    #                 connected_nodes.add(nodes[idx + 4])
+        
+    #     # Only add nodes that have connections
+    #     G = G.subgraph(connected_nodes)
+        
+    #     position = nx.spring_layout(G, dim=3)
+        
+    #     edge_traces = []
+    #     for i, edge in enumerate(G.edges()):
+    #         x0, y0, z0 = position[edge[0]]
+    #         x1, y1, z1 = position[edge[1]]
+    #         edge_traces.append(
+    #             Scatter3d(
+    #                 x=[x0, x1, None],
+    #                 y=[y0, y1, None],
+    #                 z=[z0, z1, None],
+    #                 line=dict(width=width_list[i], color='orangered'),
+    #                 mode='lines'
+    #             )
+    #         )
+        
+    #     node_trace = Scatter3d(
+    #         x=[position[node][0] for node in G.nodes()],
+    #         y=[position[node][1] for node in G.nodes()],
+    #         z=[position[node][2] for node in G.nodes()],
+    #         mode='markers+text',
+    #         text=[labels[node] for node in G.nodes()],
+    #         hoverinfo='text',
+    #         marker=dict(
+    #             showscale=False,
+    #             color='bisque',
+    #             size=10,
+    #             line=dict(width=2, color='black')),
+    #         textposition='middle center'
+    #     )
+        
+    #     layout = Layout(
+    #         showlegend=False,
+    #         margin=dict(b=0, l=0, r=0, t=0),
+    #         scene=dict(
+    #             xaxis=dict(showbackground=False, showticklabels=False),
+    #             yaxis=dict(showbackground=False, showticklabels=False),
+    #             zaxis=dict(showbackground=False, showticklabels=False)
+    #         ),
+    #         annotations=[dict(
+    #             text=f'Lyticity index: {sum(width_list) * 5:.2f}',
+    #             showarrow=False,
+    #             xref="paper", yref="paper",
+    #             x=0.5, y=1.05,
+    #             font=dict(size=16)
+    #         )]
+    #     )
+        
+    #     fig = Figure(data=[node_trace] + edge_traces, layout=layout)
+    #     fig.write_html(output_path)
+    #     return sum(width_list) * 5
+
+
 
     # def plot_lyticity_index(self, output_path: str) -> float:
     #     '''
