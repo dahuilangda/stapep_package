@@ -11,7 +11,11 @@ from Bio.PDB.Polypeptide import is_aa
 from Bio import pairwise2
 # from Bio.SubsMat import MatrixInfo as matlist
 import Bio.Align.substitution_matrices as matlist
-from Bio.Data.SCOPData import protein_letters_3to1 as aa3to1
+try:
+    from Bio.Data.PDBData import protein_letters_3to1 as aa3to1
+except ImportError:
+    print('Warning: Bio.Data.PDBData is deprecated, please use Bio.Data.SCOPData instead')
+    from Bio.Data.SCOPData import protein_letters_3to1 as aa3to1
 
 from stapep.molecular_dynamics import PrepareProt, Simulation
 from stapep.utils import PhysicochemicalPredictor, SeqPreProcessing
