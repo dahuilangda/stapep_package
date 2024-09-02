@@ -91,7 +91,7 @@ def main(args):
             'fraction_arginine', 'fraction_lysine', 'psa']
         
         X = pd.DataFrame(feats, index=[0])[feature_cols]
-        model_path = f"{os.path.dirname(os.path.realpath(__file__))}/models/lgb_model.sav"
+        model_path = f"{os.path.dirname(os.path.realpath(__file__))}/models/rf_cls_model.pkl"
         model = pickle.load(open(model_path, 'rb'))
         feats['permeability'] = model.predict(X)[0]
         print(f"Predicted permeability: {feats['permeability']}")
