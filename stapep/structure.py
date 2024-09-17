@@ -230,57 +230,94 @@ class AlignStructure(object):
                 str: The path to the generated PDB file.
         '''
 
-        ref_id = os.path.basename(ref_pdb).split('.')[0]
-        pdb_id = os.path.basename(pdb).split('.')[0]
-
-
-        parser = PDBParser()
-        ref_structure = parser.get_structure(ref_id, ref_pdb)
-        pdb_structure = parser.get_structure(pdb_id, pdb)
-        ref_model = list(ref_structure.get_models())[0]
-        pdb_model = list(pdb_structure.get_models())[0]
-
-        resseq_A = AlignStructure._get_pdb_sequence(ref_id, ref_pdb)
-        resseq_B = AlignStructure._get_pdb_sequence(pdb_id, pdb)
-        sequence_A = AlignStructure.convert_pdb_to_seq(ref_id, ref_pdb)
-        sequence_B = AlignStructure.convert_pdb_to_seq(pdb_id, pdb)
-
-        alns = pairwise2.align.globalds(sequence_A, sequence_B, matlist.load("BLOSUM62"), -10.0, -0.5,
-                                            penalize_end_gaps=(False, False) )
-        best_aln = alns[0]
-        aligned_A, aligned_B, score, begin, end = best_aln
-        mapping = {}
-        aa_i_A, aa_i_B = 0, 0
-        for aa_aln_A, aa_aln_B in zip(aligned_A, aligned_B):
-            if aa_aln_A == '-':
-                if aa_aln_B != '-':
-                    aa_i_B += 1
-            elif aa_aln_B == '-':
-                if aa_aln_A != '-':
-                    aa_i_A += 1
-            else:
-                assert resseq_A[aa_i_A][1] == aa_aln_A
-                assert resseq_B[aa_i_B][1] == aa_aln_B
-                mapping[resseq_A[aa_i_A][0]] = resseq_B[aa_i_B][0]
-                aa_i_A += 1
-                aa_i_B += 1
-
-        # Extract CA atoms using the helper function
-        refe_ca_list = AlignStructure.get_CA_atoms_from_model(ref_model, list(mapping.keys()))
-        mobi_ca_list = AlignStructure.get_CA_atoms_from_model(pdb_model, list(mapping.values()))
-
-        # Superimpose matching residues
         try:
-            si = Superimposer()
-            si.set_atoms(refe_ca_list, mobi_ca_list)
-            si.apply(pdb_structure.get_atoms())
-
-            io = PDBIO()
-            io.set_structure(pdb_structure)
-            io.save(output_pdb)
-            return output_pdb
+            import pymol
+            from pymol import cmd
+            cmd.reinitialize()
         except Exception as e:
-            print(e)
+            raise ImportError('Please install PyMOL to use this method. mamba install -c conda-forge pymol-open-source')
+
+        # Load the PDB files
+        pymol.cmd.load(ref_pdb, 'ref')
+        pymol.cmd.load(pdb, 'denovo')
+
+        # Perform alignment on alpha carbons (CA atoms)
+        out = pymol.cmd.align('denovo and name CA', 'ref and name CA')
+        rmsd, n_atoms, n_cycles, n_rmsd_pre, n_atom_pre, score, n_res = out
+
+        # Make sure to update coordinates of the denovo structure
+        pymol.cmd.alter_state(1, 'denovo', 'x, y, z = x, y, z')
+        # Apply the transformation matrix after alignment
+        pymol.cmd.matrix_copy('denovo', 'ref')
+        # Save the aligned denovo structure to a new PDB file
+        pymol.cmd.save(output_pdb, 'denovo')
+        return rmsd
+
+    # @staticmethod
+    # def align(ref_pdb: str, pdb: str, output_pdb: str):
+    #     '''
+    #         Align structures using BioPython.
+
+    #         Args:
+    #             ref_pdb (str): The path to the reference PDB file.
+    #             pdb (str): The path to the PDB file to align.
+    #             output_pdb (str): The path to save the output PDB file.
+
+    #         Returns:
+    #             str: The path to the generated PDB file.
+    #     '''
+
+    #     ref_id = os.path.basename(ref_pdb).split('.')[0]
+    #     pdb_id = os.path.basename(pdb).split('.')[0]
+
+
+    #     parser = PDBParser()
+    #     ref_structure = parser.get_structure(ref_id, ref_pdb)
+    #     pdb_structure = parser.get_structure(pdb_id, pdb)
+    #     ref_model = list(ref_structure.get_models())[0]
+    #     pdb_model = list(pdb_structure.get_models())[0]
+
+    #     resseq_A = AlignStructure._get_pdb_sequence(ref_id, ref_pdb)
+    #     resseq_B = AlignStructure._get_pdb_sequence(pdb_id, pdb)
+    #     sequence_A = AlignStructure.convert_pdb_to_seq(ref_id, ref_pdb)
+    #     sequence_B = AlignStructure.convert_pdb_to_seq(pdb_id, pdb)
+
+    #     alns = pairwise2.align.globalds(sequence_A, sequence_B, matlist.load("BLOSUM62"), -10.0, -0.5,
+    #                                         penalize_end_gaps=(False, False) )
+    #     best_aln = alns[0]
+    #     aligned_A, aligned_B, score, begin, end = best_aln
+    #     mapping = {}
+    #     aa_i_A, aa_i_B = 0, 0
+    #     for aa_aln_A, aa_aln_B in zip(aligned_A, aligned_B):
+    #         if aa_aln_A == '-':
+    #             if aa_aln_B != '-':
+    #                 aa_i_B += 1
+    #         elif aa_aln_B == '-':
+    #             if aa_aln_A != '-':
+    #                 aa_i_A += 1
+    #         else:
+    #             assert resseq_A[aa_i_A][1] == aa_aln_A
+    #             assert resseq_B[aa_i_B][1] == aa_aln_B
+    #             mapping[resseq_A[aa_i_A][0]] = resseq_B[aa_i_B][0]
+    #             aa_i_A += 1
+    #             aa_i_B += 1
+
+    #     # Extract CA atoms using the helper function
+    #     refe_ca_list = AlignStructure.get_CA_atoms_from_model(ref_model, list(mapping.keys()))
+    #     mobi_ca_list = AlignStructure.get_CA_atoms_from_model(pdb_model, list(mapping.values()))
+
+    #     # Superimpose matching residues
+    #     try:
+    #         si = Superimposer()
+    #         si.set_atoms(refe_ca_list, mobi_ca_list)
+    #         si.apply(pdb_structure.get_atoms())
+
+    #         io = PDBIO()
+    #         io.set_structure(pdb_structure)
+    #         io.save(output_pdb)
+    #         return output_pdb
+    #     except Exception as e:
+    #         print(e)
 
     @staticmethod
     def rmsd(ref_pdb: str, pdb: str):
