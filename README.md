@@ -8,7 +8,7 @@ Stapled peptides are peptide chains comprised of both natural and non-standard a
 Currently, there is no unified computational tool to handle stapled peptides. This project aims to provide a unified toolset, including: **building the 2D or 3D structure of stapled peptides**, **molecular dynamics**, and **extracting features** from the sequence and structure for other downstream tasks.
 
 ### News
-- [2024/12/6] Our research article has been published in the Journal of Chemical Information and Modeling. For detailed insights, you can access the paper [here](https://pubs.acs.org/doi/10.1021/acs.jcim.4c01718).
+- [2024/11/6] Our research article has been published in the Journal of Chemical Information and Modeling. For detailed insights, you can access the paper [here](https://pubs.acs.org/doi/10.1021/acs.jcim.4c01718).
 
 Installation
 ------------
