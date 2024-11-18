@@ -198,7 +198,7 @@ In addition to calculating the lyticity index, we can also draw the image
 ```python
 import os
 pathname = 'data'
-pps.plot_lyticity_index(os.path.join(pathname, 'lyticity_index.png')) # Draw the lyticity index image and save it to the specified path
+pps.plot_lyticity_index(os.path.join(pathname, 'lyticity_index.svg')) # Draw the lyticity index image and save it to the specified path
 ```
 ![lyticity_index](https://github.com/dahuilangda/stapep_package/blob/master/stapep/example/img/Lyticity_index.png)
 
