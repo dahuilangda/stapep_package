@@ -166,7 +166,7 @@ charge_density 0.0024838926027143026
 aromaticity 0.05263157894736842
 fraction_arginine 0.2631578947368421
 fraction_lysine 0.05263157894736842
-lyticity index:  114.16199999999999
+lyticity index:  564.745
 isoelectric_point:  11.999967765808105
 ```
 
