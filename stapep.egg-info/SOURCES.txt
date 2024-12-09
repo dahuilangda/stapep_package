@@ -3,6 +3,7 @@ setup.py
 stapep/__init__.py
 stapep/esmfold.py
 stapep/filter.py
+stapep/generate_covalent_template.py
 stapep/generate_template.py
 stapep/molecular_dynamics.py
 stapep/params.py

@@ -3,6 +3,8 @@ import subprocess
 import time
 import shutil
 import requests
+import pandas as pd
+
 # OpenMM Imports
 import openmm as mm
 import openmm.app as app
@@ -33,12 +35,14 @@ class PrepareProt(object):
                  output: str, 
                  method: str=None, 
                  template_pdb_file_path: str=None,
-                 additional_residues: dict=None) -> None:
+                 additional_residues: dict=None,
+                 covalent_info: pd.DataFrame=None) -> None:
         self.seq = seq
         self.output = output
         if not os.path.exists(self.output):
             os.makedirs(self.output)
         self.additional_residues = additional_residues
+        self.covalent_info = covalent_info
         self.seqpp = SeqPreProcessing(self.additional_residues)
         self.method = method
         self.template_pdb_file_path = template_pdb_file_path
@@ -303,7 +307,8 @@ class PrepareProt(object):
                         inpcrd_vac: str='pep_vac.inpcrd',
                         prmtop_sol: str='pep.prmtop',
                         inpcrd_sol: str='pep.inpcrd',
-                        additional_residues: dict=None) -> str:
+                        additional_residues: dict=None,
+                        covalent_info: pd.DataFrame=None) -> str:
         '''
             Generate tleap file for AMBER
 
@@ -315,6 +320,9 @@ class PrepareProt(object):
                 additional_residues: additional residues to be added to the system (default: None)
                     For example, {'AIB': ('/path/to/AIB.prepin', '/path/to/frcmod.AIB')
                                   'NLE': ('/path/to/NLE.prepin', '/path/to/frcmod.NLE')}
+                covalent_info: covalent information of the stapled peptide (default: None)
+                    For example, Res1,Atom1,Res2,Atom2,nBonds,Frcmod
+                                 R1A,C1,R2A,C1,2,frcmod.R1A_R2A
 
             Returns:
                 tleap file name
@@ -339,6 +347,9 @@ class PrepareProt(object):
                 frcmod_file = f"{os.path.dirname(os.path.realpath(__file__))}/templates/{prefix}/frcmod.{prefix.lower()}"
                 lines.extend((f'loadAmberPrep {prepin_file}', f'loadAmberParams {frcmod_file}'))
 
+        if covalent_info is not None:
+            lines.append(f'loadAmberParams {covalent_info["Frcmod"][0]}')
+
         if additional_residues is not None:
             for residue, prefix in additional_residues.items():
                 residues[residue] = prefix
@@ -358,13 +369,15 @@ class PrepareProt(object):
             pdb_file = self._seq_to_pdb(method='modeller')
             base_pdb_file = os.path.basename(pdb_file)
             lines.append(f'pep = loadpdb {base_pdb_file}')
-            
 
         if len(self._stapled_idx) != 0 and len(self._stapled_idx) % 2 == 0:
             if self._has_cap and self.method is not None:
                 lines.extend(f'bond pep.{self._stapled_idx[i]-1}.C2 pep.{self._stapled_idx[i+1]-1}.C2' for i in range(0, len(self._stapled_idx), 2))
             else:
                 lines.extend(f'bond pep.{self._stapled_idx[i]}.C2 pep.{self._stapled_idx[i+1]}.C2' for i in range(0, len(self._stapled_idx), 2))
+
+        if covalent_info is not None:
+            lines.extend(f'bond pep.{covalent_info["Res1"][0]}.{covalent_info["Atom1"][0]} pep.{covalent_info["Res2"][0]}.{covalent_info["Atom2"][0]}' for i in range(len(covalent_info)))
 
         lines.extend([f'saveAmberParm pep {prmtop_vac} {inpcrd_vac}', 
                       'solvatebox pep TIP3PBOX 10.0', 
@@ -402,6 +415,7 @@ class PrepareProt(object):
             prmtop_sol=prmtop_sol,
             inpcrd_sol=inpcrd_sol,
             additional_residues=self.additional_residues,
+            covalent_info=self.covalent_info
 
         )
         base_tleap_file = os.path.basename(tleap_file)

@@ -105,7 +105,8 @@ class Structure(object):
                                             seq: str, 
                                             output_pdb: str, 
                                             template_pdb: str,
-                                            additional_residues: dict=None):
+                                            additional_residues: dict=None,
+                                            covalent_info: pd.DataFrame=None):
         '''
             Generate a 3D structure of a peptide from a template using Modeller.
 
@@ -124,7 +125,7 @@ class Structure(object):
         spp.check_seq_validation(seq)
         # get absolute path of template pdb file
         template_pdb = os.path.abspath(template_pdb)
-        pp = PrepareProt(seq, self.tmp_dir, method='modeller', template_pdb_file_path=template_pdb)
+        pp = PrepareProt(seq, self.tmp_dir, method='modeller', template_pdb_file_path=template_pdb, additional_residues=additional_residues, covalent_info=covalent_info)
         pp._gen_prmtop_and_inpcrd_file()
         self._short_time_simulation()
         self._get_opt_structure(seq, output_pdb)
@@ -136,7 +137,7 @@ class Structure(object):
                              seq: str, 
                              output_pdb: str,
                              additional_residues: dict=None,
-                             proxy=None):
+                             covalent_info: pd.DataFrame=None):
         '''
             Generate a de novo 3D structure of a peptide using ESMFold.
 
@@ -152,7 +153,7 @@ class Structure(object):
         '''
         spp = SeqPreProcessing(additional_residues=additional_residues)
         spp.check_seq_validation(seq)
-        pp = PrepareProt(seq, self.tmp_dir, method='alphafold', additional_residues=additional_residues)
+        pp = PrepareProt(seq, self.tmp_dir, method='alphafold', additional_residues=additional_residues, covalent_info=covalent_info)
         pp._gen_prmtop_and_inpcrd_file()
         self._short_time_simulation()
         self._get_opt_structure(seq, output_pdb)
@@ -163,7 +164,8 @@ class Structure(object):
     def generate_3d_structure_from_sequence(self, 
                                             seq: str, 
                                             output_pdb: str,
-                                            additional_residues: dict=None):
+                                            additional_residues: dict=None,
+                                            covalent_info: pd.DataFrame=None):
         '''
             Generate a 3D structure of a peptide using Ambertools.
 
@@ -182,7 +184,7 @@ class Structure(object):
         '''
         spp = SeqPreProcessing(additional_residues=additional_residues)
         spp.check_seq_validation(seq)
-        pp = PrepareProt(seq, self.tmp_dir, method=None)
+        pp = PrepareProt(seq, self.tmp_dir, method=None, additional_residues=additional_residues, covalent_info=covalent_info)
         pp._gen_prmtop_and_inpcrd_file()
         self._short_time_simulation()
         self._get_opt_structure(seq, output_pdb)

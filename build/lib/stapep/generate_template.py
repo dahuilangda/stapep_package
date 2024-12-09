@@ -293,4 +293,4 @@ if __name__ == '__main__':
     # cd到原来的目录
     os.chdir(pwd)
     
-    # python generate_non_standard_aa_to_templates.py --smiles "N=C(NCCC[C@H](N)C(=O)O)N[C@@H]1O[C@H](CO)[C@H](O)[C@H](O)[C@H]1O" --name R1A
+    # python generate_template.py --smiles "N=C(NCCC[C@H](N)C(=O)O)N[C@@H]1O[C@H](CO)[C@H](O)[C@H](O)[C@H]1O" --name R1A
