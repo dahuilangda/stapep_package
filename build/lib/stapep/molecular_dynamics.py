@@ -308,7 +308,8 @@ class PrepareProt(object):
                         prmtop_sol: str='pep.prmtop',
                         inpcrd_sol: str='pep.inpcrd',
                         additional_residues: dict=None,
-                        covalent_info: pd.DataFrame=None) -> str:
+                        covalent_info: pd.DataFrame=None,
+                        **kwargs: dict[str, str]) -> str:
         '''
             Generate tleap file for AMBER
 
@@ -362,7 +363,11 @@ class PrepareProt(object):
         if self.method is None:
             lines.append('pep = sequence { ' + self.seqpp._one_to_three(self.seq) + ' }')
         elif self.method == 'alphafold':
-            pdb_file = self._seq_to_pdb(method='alphafold', local=True)
+            if 'local' in kwargs:
+                local = kwargs['local']
+            else:
+                local = True
+            pdb_file = self._seq_to_pdb(method='alphafold', local=local)
             base_pdb_file = os.path.basename(pdb_file)
             lines.append(f'pep = loadpdb {base_pdb_file}')
         elif self.method == 'modeller':
@@ -396,7 +401,8 @@ class PrepareProt(object):
                                     prmtop_vac: str='pep_vac.prmtop',
                                     inpcrd_vac: str='pep_vac.inpcrd',
                                     prmtop_sol: str='pep.prmtop',
-                                    inpcrd_sol: str='pep.inpcrd') -> None:
+                                    inpcrd_sol: str='pep.inpcrd',
+                                    **kwargs: dict[str, str]) -> None:
         '''
             Generate prmtop and inpcrd file
 
@@ -415,8 +421,8 @@ class PrepareProt(object):
             prmtop_sol=prmtop_sol,
             inpcrd_sol=inpcrd_sol,
             additional_residues=self.additional_residues,
-            covalent_info=self.covalent_info
-
+            covalent_info=self.covalent_info,
+            **kwargs
         )
         base_tleap_file = os.path.basename(tleap_file)
         cmd = ['tleap', '-f', base_tleap_file]
