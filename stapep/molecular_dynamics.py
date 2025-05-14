@@ -441,7 +441,8 @@ class Simulation(object):
                     friction: float=1.0, # ps^-1
                     timestep: float=2, # fs
                     interval: int=1000,
-                    nsteps: int=5000000) -> None:
+                    nsteps: int=5000000,
+                    **kwargs: dict[str, str]) -> None:
         '''
             The function has several parameters, some of which have default values. The function has the following parameters:
 
@@ -498,12 +499,17 @@ class Simulation(object):
         else:
             raise ValueError('Type of simulation must be explicit or implicit')
         
+
+        platform = kwargs.get('platform', 'CUDA')
         self.integrator = mm.LangevinIntegrator(
                         temperature*u.kelvin,       # Temperature of heat bath
                         friction/u.picoseconds,  # Friction coefficient
                         timestep*u.femtoseconds)   # Time step
-        self.platform = mm.Platform.getPlatformByName('CUDA')
-        prop = dict(CudaPrecision='mixed') # Use mixed single/double precision
+        self.platform = mm.Platform.getPlatformByName(platform)
+        if platform == 'CUDA':
+            prop = dict(CudaPrecision='mixed')
+        else:
+            prop = dict()
         self.sim = app.Simulation(self.pep_solv.topology, self.system, self.integrator, self.platform, prop)
         self.sim.context.setPositions(self.pep_solv.positions)
         self.sim.reporters.append(

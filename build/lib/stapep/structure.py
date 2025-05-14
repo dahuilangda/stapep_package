@@ -76,7 +76,14 @@ class Structure(object):
         if solvent not in ['water', 'chloroform', 'DMF', 'DMSO', 'ethanol', 'acetone']:
             raise ValueError(f'{solvent} is not a valid solvent option, please choose from the following options: water, chloroform, DMF, DMSO, ethanol, acetone')
 
-    def _short_time_simulation(self, nsteps: int=100000):
+    def _short_time_simulation(self, nsteps: int=100000, **kwargs: dict):
+        '''
+            Run a short time simulation to optimize the structure.
+
+            Args:
+                nsteps (int): The number of steps for the simulation. Defaults to 100000.
+                kwargs: Additional arguments for the simulation.
+        '''
         sim = Simulation(self.tmp_dir)
         sim.setup(type='implicit', 
                   solvent=self.solvent, 
@@ -84,7 +91,8 @@ class Structure(object):
                   friction=1, 
                   timestep=2, 
                   interval=10, 
-                  nsteps=nsteps)
+                  nsteps=nsteps,
+                  **kwargs)
         if self.verbose:
             logging.info(f'Running short time simulation for {nsteps} steps')
         sim.minimize()
@@ -106,7 +114,8 @@ class Structure(object):
                                             output_pdb: str, 
                                             template_pdb: str,
                                             additional_residues: dict=None,
-                                            covalent_info: pd.DataFrame=None) -> str:
+                                            covalent_info: pd.DataFrame=None,
+                                            **kwargs: dict) -> str:
         '''
             Generate a 3D structure of a peptide from a template using Modeller.
 
@@ -127,7 +136,7 @@ class Structure(object):
         template_pdb = os.path.abspath(template_pdb)
         pp = PrepareProt(seq, self.tmp_dir, method='modeller', template_pdb_file_path=template_pdb, additional_residues=additional_residues, covalent_info=covalent_info)
         pp._gen_prmtop_and_inpcrd_file()
-        self._short_time_simulation()
+        self._short_time_simulation(**kwargs)
         self._get_opt_structure(seq, output_pdb)
         if not self.save_tmp_dir:
             self._del_tmp_dir()
@@ -156,7 +165,7 @@ class Structure(object):
         spp.check_seq_validation(seq)
         pp = PrepareProt(seq, self.tmp_dir, method='alphafold', additional_residues=additional_residues, covalent_info=covalent_info)
         pp._gen_prmtop_and_inpcrd_file(**kwargs)
-        self._short_time_simulation()
+        self._short_time_simulation(**kwargs)
         self._get_opt_structure(seq, output_pdb)
         if not self.save_tmp_dir:
             self._del_tmp_dir()
@@ -166,7 +175,8 @@ class Structure(object):
                                             seq: str, 
                                             output_pdb: str,
                                             additional_residues: dict=None,
-                                            covalent_info: pd.DataFrame=None):
+                                            covalent_info: pd.DataFrame=None,
+                                            **kwargs: dict) -> str:
         '''
             Generate a 3D structure of a peptide using Ambertools.
 
@@ -187,7 +197,7 @@ class Structure(object):
         spp.check_seq_validation(seq)
         pp = PrepareProt(seq, self.tmp_dir, method=None, additional_residues=additional_residues, covalent_info=covalent_info)
         pp._gen_prmtop_and_inpcrd_file()
-        self._short_time_simulation()
+        self._short_time_simulation(**kwargs)
         self._get_opt_structure(seq, output_pdb)
         if not self.save_tmp_dir:
             self._del_tmp_dir()
