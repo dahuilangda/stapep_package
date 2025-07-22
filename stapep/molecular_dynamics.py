@@ -90,20 +90,47 @@ class PrepareProt(object):
                         break
         # calculate atom coordinates of NME according to the last residue
         if self._has_ter:
-            for step, line in enumerate(reversed(lines)):
+            # Find the last CA atom and TER/END positions
+            last_ca_idx = -1
+            ter_idx = -1
+            end_idx = -1
+            
+            for i, line in enumerate(lines):
                 if line.startswith('ATOM') and line[13:15] == 'CA':
-                    try:
-                        orientation = [float(lines[-step-2][30:38]) - float(lines[-step][30:38]),
-                                        float(lines[-step-2][38:46]) - float(lines[-step][38:46]),
-                                        float(lines[-step-2][46:54]) - float(lines[-step][46:54])]
-                        nme_atom_coord = self._calculate_atom_coord(lines, -step-1, orientation, 1)
+                    last_ca_idx = i
+                elif line.startswith('TER'):
+                    ter_idx = i
+                elif line.startswith('END'):
+                    end_idx = i
+            
+            if last_ca_idx >= 1:  # Need at least 2 CA atoms for orientation calculation
+                try:
+                    # Find the second-to-last CA atom for orientation calculation
+                    second_last_ca_idx = -1
+                    for i in range(last_ca_idx - 1, -1, -1):
+                        if lines[i].startswith('ATOM') and lines[i][13:15] == 'CA':
+                            second_last_ca_idx = i
+                            break
+                    
+                    if second_last_ca_idx >= 0:
+                        # Calculate orientation based on the last two CA atoms
+                        orientation = [float(lines[last_ca_idx][30:38]) - float(lines[second_last_ca_idx][30:38]),
+                                      float(lines[last_ca_idx][38:46]) - float(lines[second_last_ca_idx][38:46]),
+                                      float(lines[last_ca_idx][46:54]) - float(lines[second_last_ca_idx][46:54])]
+                        nme_atom_coord = self._calculate_atom_coord(lines, last_ca_idx, orientation, 1)
                         nme_atom_line = f'ATOM  {len(lines)+1:5d}  N   NME A{len(self.seqpp._seq_to_list(self.seq))+1:4d}    {nme_atom_coord[0]:8.3f}{nme_atom_coord[1]:8.3f}{nme_atom_coord[2]:8.3f}  1.00  0.00           N  '
-                        # insert NME to the last line of ATOM
-                        lines.append(nme_atom_line)
-                        break
-                    except IndexError:
-                        print("Error: Failed to calculate NME atom coordinates")
-                        break
+                        
+                        # Insert NME before TER or END, or at the end if neither exists
+                        if ter_idx >= 0:
+                            lines.insert(ter_idx, nme_atom_line)
+                        elif end_idx >= 0:
+                            lines.insert(end_idx, nme_atom_line)
+                        else:
+                            lines.append(nme_atom_line)
+                except (IndexError, ValueError) as e:
+                    print(f"Error: Failed to calculate NME atom coordinates: {e}")
+            else:
+                print("Error: Insufficient CA atoms found for NME calculation")
         return lines
 
     # def _insert_ace_and_nme(self, lines: str) -> str:
@@ -385,6 +412,7 @@ class PrepareProt(object):
             lines.extend(f'bond pep.{covalent_info["Res1"][0]}.{covalent_info["Atom1"][0]} pep.{covalent_info["Res2"][0]}.{covalent_info["Atom2"][0]}' for i in range(len(covalent_info)))
 
         lines.extend([f'saveAmberParm pep {prmtop_vac} {inpcrd_vac}', 
+                      'savepdb pep pep_vac.pdb',
                       'solvatebox pep TIP3PBOX 10.0', 
                       'addions pep Na+ 0',
                       'addions pep Cl- 0',
