@@ -147,6 +147,25 @@ def read_molecule_from_pdb(pdb, template_smiles=None):
                          Chem.SanitizeFlags.SANITIZE_ADJUSTHS)
     return mol
 
+def _smiles_has_atom_map(smiles):
+    if not smiles:
+        return False
+    return re.search(r':\d+\]', smiles) is not None
+
+def _strip_atom_map(smiles):
+    if not smiles:
+        return smiles
+    return re.sub(r':\d+\]', ']', smiles)
+
+def _relax_bracket_hcount(smiles):
+    if not smiles:
+        return smiles
+    def repl(match):
+        content = match.group(1)
+        content = re.sub(r'H(?![a-z])\d*', '', content)
+        return f'[{content}]'
+    return re.sub(r'\[([^\]]+)\]', repl, smiles)
+
 def get_mapping_name_from_pdb(pdb, template_smiles=None):
     """读取 PDB 文件中的分子，并尝试重建键序信息。返回 mol 对象和映射编号对应的 PDB 原子名称字典。"""
     # 读取 PDB 文件中的分子
@@ -186,23 +205,49 @@ def get_mapping_name_from_pdb(pdb, template_smiles=None):
 
 def find_smiles_pattern(pdb, smiles="NCC(O)O", return_first=False):
     """Finds SMILES patterns in a PDB file."""
-    mol = read_molecule_from_pdb(pdb)
+    template_smiles = _strip_atom_map(smiles) if _smiles_has_atom_map(smiles) else None
+    try:
+        mol = read_molecule_from_pdb(pdb, template_smiles=template_smiles)
+    except Exception:
+        mol = read_molecule_from_pdb(pdb)
     if not mol:
         return "Failed to load molecule from PDB"
 
-    pattern = Chem.MolFromSmiles(smiles)
+    pattern_smiles = template_smiles or smiles
+    pattern = Chem.MolFromSmiles(pattern_smiles)
+    if not pattern:
+        return []
     Chem.SanitizeMol(pattern)  # Ensure the pattern is sanitized for matching
     matches = mol.GetSubstructMatches(pattern)
+    if not matches and _smiles_has_atom_map(smiles):
+        relaxed_smiles = _relax_bracket_hcount(pattern_smiles)
+        if relaxed_smiles != pattern_smiles:
+            relaxed_pattern = Chem.MolFromSmiles(relaxed_smiles)
+            if relaxed_pattern:
+                Chem.SanitizeMol(relaxed_pattern)
+                matches = mol.GetSubstructMatches(relaxed_pattern)
 
     atom_names = []
     if matches:
+        pattern_with_map = Chem.MolFromSmiles(smiles)
+        mapped_atom_indices = []
+        if pattern_with_map:
+            mapped_atom_indices = [
+                idx for idx, atom in enumerate(pattern_with_map.GetAtoms())
+                if atom.GetAtomMapNum() > 0
+            ]
+        use_atom_map = len(mapped_atom_indices) > 0
         # Output all matching atom names
         for match in matches:
+            if use_atom_map:
+                atoms = [mol.GetAtomWithIdx(match[idx]) for idx in mapped_atom_indices]
+                atom_names.extend([atom.GetPDBResidueInfo().GetName().strip() for atom in atoms])
+                break
             atoms = [mol.GetAtomWithIdx(idx) for idx in match]
-            atom_names.extend([atom.GetPDBResidueInfo().GetName() for atom in atoms])
+            atom_names.extend([atom.GetPDBResidueInfo().GetName().strip() for atom in atoms])
             if return_first:
                 break
-        return atom_names
+        return list(dict.fromkeys(atom_names))
     else:
         return []
 
@@ -243,31 +288,38 @@ def map_to_amber_mc(molecule,
     }
 
     O_mappings = []
+    matched_atom_names = {name.strip() for name in matched_atoms} if matched_atoms else set()
+    use_match_filter = bool(matched_atom_names)
     for atom in molecule.GetAtoms():
-        if atom.GetPDBResidueInfo().GetName() not in matched_atoms:
+        atom_name = atom.GetPDBResidueInfo().GetName().strip()
+        if use_match_filter and atom_name not in matched_atom_names:
             continue
 
-        # N原子的度为3，相邻原子为C,和2个H
-        if atom.GetSymbol() == 'N' and atom.GetTotalDegree() == 3 and \
-            len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'H']) == 2 and \
-            len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'C']) == 1:
-            # amber_mapping['HEAD_NAME'] = atom.GetPDBResidueInfo().GetName().strip()
-            amber_mapping['HEAD_NAME'].append(atom.GetPDBResidueInfo().GetName().strip())
+        # N原子作为头部：只连接一个重原子(通常是C)，且带有氢(显式或隐式)
+        if atom.GetSymbol() == 'N':
+            heavy_neighbors = [n for n in atom.GetNeighbors() if n.GetSymbol() != 'H']
+            c_neighbors = [n for n in heavy_neighbors if n.GetSymbol() == 'C']
+            if len(heavy_neighbors) == 1 and len(c_neighbors) == 1:
+                amber_mapping['HEAD_NAME'].append(atom_name)
 
-        # C原子的度为4, 相邻原子为=O，-O，C
+        # C原子: 相邻原子为=O，-O，C
         elif atom.GetSymbol() == 'C' and \
-            atom.GetTotalDegree() == 4 and \
             len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'O']) == 2 and \
             len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'C']) == 1:
-            # amber_mapping['TAIL_NAME'] = atom.GetPDBResidueInfo().GetName().strip()
-            amber_mapping['TAIL_NAME'].append(atom.GetPDBResidueInfo().GetName().strip())
+            amber_mapping['TAIL_NAME'].append(atom_name)
 
         # 链接C和N的原子为主链原子
         if atom.GetSymbol() == 'C' and \
             len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'N']) == 1 and \
             len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'O']) == 0:
-            # amber_mapping['MAIN_CHAIN'] = atom.GetPDBResidueInfo().GetName().strip()
-            amber_mapping['MAIN_CHAIN'].append(atom.GetPDBResidueInfo().GetName().strip())
+            amber_mapping['MAIN_CHAIN'].append(atom_name)
+
+    if not amber_mapping['HEAD_NAME'] and matched_atom_names:
+        for atom in molecule.GetAtoms():
+            atom_name = atom.GetPDBResidueInfo().GetName().strip()
+            if atom_name in matched_atom_names and atom.GetSymbol() == 'N':
+                amber_mapping['HEAD_NAME'].append(atom_name)
+                break
 
     # 开始获取OMIT_NAME, 
     # 1. 与TAIL_NAME相邻的OH原子，包括O原子及其相邻的H原子
@@ -282,13 +334,14 @@ def map_to_amber_mc(molecule,
                     O_mapping = n.GetPDBResidueInfo().GetName().strip() # O_mapping是O原子的名称
                     O_mappings.append(O_mapping)
 
-    for atom in molecule.GetAtoms():
-        if atom.GetPDBResidueInfo().GetName().strip() == amber_mapping['HEAD_NAME'][0]:
-            # 2. 与HEAD_NAME相邻的NH原子，有2个H，但是只删除一个H
-            for n in atom.GetNeighbors():
-                if n.GetSymbol() == 'H' and len([n for n in n.GetNeighbors() if n.GetSymbol() == 'N']) == 1:
-                    amber_mapping['OMIT_NAME'].append(n.GetPDBResidueInfo().GetName().strip())
-                    break
+    if amber_mapping['HEAD_NAME']:
+        for atom in molecule.GetAtoms():
+            if atom.GetPDBResidueInfo().GetName().strip() == amber_mapping['HEAD_NAME'][0]:
+                # 2. 与HEAD_NAME相邻的NH原子，有2个H，但是只删除一个H
+                for n in atom.GetNeighbors():
+                    if n.GetSymbol() == 'H' and len([n for n in n.GetNeighbors() if n.GetSymbol() == 'N']) == 1:
+                        amber_mapping['OMIT_NAME'].append(n.GetPDBResidueInfo().GetName().strip())
+                        break
 
     return amber_mapping, O_mappings
 
@@ -380,6 +433,8 @@ def write_amber_mc(amber_map, output_file):
     """
     Writes the Amber mapping to an mc file.
     """
+    if not amber_map["HEAD_NAME"] or not amber_map["TAIL_NAME"] or not amber_map["MAIN_CHAIN"]:
+        raise ValueError('HEAD_NAME/TAIL_NAME/MAIN_CHAIN not found; check SMILES mapping or pattern matching.')
     with open(f'{output_file}.mc', 'w') as f:
         f.write(f'HEAD_NAME {amber_map["HEAD_NAME"][0]}\n')
         f.write(f'TAIL_NAME {amber_map["TAIL_NAME"][0]}\n')
@@ -428,12 +483,26 @@ def smi_to_sdf(smi, name=None):
 
     return f'{name}.sdf'
 
-def sdf_to_ac(sdf, name=None):
+def _format_net_charge(charge):
+    if charge is None:
+        return None
+    try:
+        charge_val = float(charge)
+    except (TypeError, ValueError):
+        raise ValueError(f'Invalid charge value: {charge}')
+    if not charge_val.is_integer():
+        raise ValueError(f'Net charge must be an integer for antechamber: {charge}')
+    return str(int(charge_val))
+
+def sdf_to_ac(sdf, name=None, charge=None):
     """将SDF转换为Amber mc文件"""
     '''
     antechamber -fi sdf -i R1A.sdf -bk R1A -fo ac -o R1A.ac -c bcc -at amber
     '''
+    net_charge = _format_net_charge(charge)
     cmd = f'antechamber -fi sdf -i {sdf} -bk {name} -fo ac -o {name}.ac -c bcc -at amber'
+    if net_charge is not None:
+        cmd = f'{cmd} -nc {net_charge}'
     print(cmd)
     os.system(cmd)
     return f'{name}.ac'
@@ -533,8 +602,8 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # Generate the AC file
-    ac1 = sdf_to_ac(sdf1, args.name1)
-    ac2 = sdf_to_ac(sdf2, args.name2)
+    ac1 = sdf_to_ac(sdf1, args.name1, args.charge1)
+    ac2 = sdf_to_ac(sdf2, args.name2, args.charge2)
 
     # Generate the PDB file
     pdb1 = ac_to_pdb(ac1, args.name1)
@@ -579,13 +648,13 @@ if __name__ == '__main__':
     prep_to_frcmod(prepin2, f'frcmod.{args.name2}')
 
     # combine the smi1 and smi2
+    combined_charges = float(args.charge1) + float(args.charge2)
     combined_smiles = connect_molecules(args.smiles1, args.smiles2, f'{args.name1}_{args.name2}', nbonds=args.nbonds) # 生成连接后的SMILES
     combined_sdf = smi_to_sdf(process_smiles(combined_smiles), f'{args.name1}_{args.name2}') # 生成连接后的SDF
-    combined_ac = sdf_to_ac(combined_sdf, f'{args.name1}_{args.name2}') # 生成连接后的AC
+    combined_ac = sdf_to_ac(combined_sdf, f'{args.name1}_{args.name2}', combined_charges) # 生成连接后的AC
     combined_pdb = ac_to_pdb(combined_ac, f'{args.name1}_{args.name2}') # 生成连接后的PDB
     combined_mol = read_molecule_from_pdb(combined_pdb)
     combined_matched_atoms = find_smiles_pattern(combined_pdb)
-    combined_charges = float(args.charge1) + float(args.charge2)
     combined_amber_map, combined_O_mapping = map_to_amber_mc(combined_mol, combined_matched_atoms, charge=combined_charges)
     modify_ac(combined_ac, combined_amber_map, combined_O_mapping)
     ac_to_frcmod(combined_ac, f'frcmod.{args.name1}_{args.name2}')

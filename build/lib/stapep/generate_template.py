@@ -19,21 +19,68 @@ def read_molecule_from_pdb(pdb, template_smiles=None):
                          Chem.SanitizeFlags.SANITIZE_ADJUSTHS)
     return mol
 
+def _smiles_has_atom_map(smiles):
+    if not smiles:
+        return False
+    return re.search(r':\d+\]', smiles) is not None
+
+def _strip_atom_map(smiles):
+    if not smiles:
+        return smiles
+    return re.sub(r':\d+\]', ']', smiles)
+
+def _relax_bracket_hcount(smiles):
+    if not smiles:
+        return smiles
+    def repl(match):
+        content = match.group(1)
+        content = re.sub(r'H(?![a-z])\d*', '', content)
+        return f'[{content}]'
+    return re.sub(r'\[([^\]]+)\]', repl, smiles)
+
 def find_smiles_pattern(pdb, smiles="NCC(O)O"):
     """在PDB文件内容中寻找SMILES模式"""
-    mol = read_molecule_from_pdb(pdb)
+    template_smiles = _strip_atom_map(smiles) if _smiles_has_atom_map(smiles) else None
+    try:
+        mol = read_molecule_from_pdb(pdb, template_smiles=template_smiles)
+    except Exception:
+        mol = read_molecule_from_pdb(pdb)
     if not mol:
         return "Failed to load molecule from PDB"
 
-    pattern = Chem.MolFromSmiles(smiles)
+    pattern_smiles = template_smiles or smiles
+    pattern = Chem.MolFromSmiles(pattern_smiles)
+    if not pattern:
+        return []
     Chem.SanitizeMol(pattern)  # Ensure the pattern is sanitized for matching
     matches = mol.GetSubstructMatches(pattern)
+    if not matches and _smiles_has_atom_map(smiles):
+        relaxed_smiles = _relax_bracket_hcount(pattern_smiles)
+        if relaxed_smiles != pattern_smiles:
+            relaxed_pattern = Chem.MolFromSmiles(relaxed_smiles)
+            if relaxed_pattern:
+                Chem.SanitizeMol(relaxed_pattern)
+                matches = mol.GetSubstructMatches(relaxed_pattern)
 
     if matches:
         # 输出所有匹配的原子名称, 而不是原子索引，也不是原子类型
+        pattern_with_map = Chem.MolFromSmiles(smiles)
+        mapped_atom_indices = []
+        if pattern_with_map:
+            mapped_atom_indices = [
+                idx for idx, atom in enumerate(pattern_with_map.GetAtoms())
+                if atom.GetAtomMapNum() > 0
+            ]
+        use_atom_map = len(mapped_atom_indices) > 0
+        atom_names = []
         for match in matches:
+            if use_atom_map:
+                atoms = [mol.GetAtomWithIdx(match[idx]) for idx in mapped_atom_indices]
+                atom_names.extend([atom.GetPDBResidueInfo().GetName().strip() for atom in atoms])
+                break
             atoms = [mol.GetAtomWithIdx(idx) for idx in match]
-        return [atom.GetPDBResidueInfo().GetName() for atom in atoms]
+            atom_names.extend([atom.GetPDBResidueInfo().GetName().strip() for atom in atoms])
+        return list(dict.fromkeys(atom_names))
     else:
         return []
     
@@ -73,28 +120,41 @@ def map_to_amber_mc(molecule,
         'CHARGE': charge
     }
 
+    matched_atom_names = {name.strip() for name in matched_atoms} if matched_atoms else set()
+
+    O_mapping = None
+
+    use_match_filter = bool(matched_atom_names)
     for atom in molecule.GetAtoms():
-        if atom.GetPDBResidueInfo().GetName() not in matched_atoms:
+        atom_name = atom.GetPDBResidueInfo().GetName().strip()
+        if use_match_filter and atom_name not in matched_atom_names:
             continue
 
-        # N原子的度为3，相邻原子为C,和2个H
-        if atom.GetSymbol() == 'N' and atom.GetTotalDegree() == 3 and \
-            len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'H']) == 2 and \
-            len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'C']) == 1:
-            amber_mapping['HEAD_NAME'] = atom.GetPDBResidueInfo().GetName().strip()
+        # N原子作为头部：只连接一个重原子(通常是C)，且带有氢(显式或隐式)
+        if atom.GetSymbol() == 'N':
+            heavy_neighbors = [n for n in atom.GetNeighbors() if n.GetSymbol() != 'H']
+            c_neighbors = [n for n in heavy_neighbors if n.GetSymbol() == 'C']
+            if len(heavy_neighbors) == 1 and len(c_neighbors) == 1:
+                amber_mapping['HEAD_NAME'] = atom_name
 
-        # C原子的度为4, 相邻原子为=O，-O，C
+        # C原子: 相邻原子为=O，-O，C
         elif atom.GetSymbol() == 'C' and \
-            atom.GetTotalDegree() == 4 and \
             len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'O']) == 2 and \
             len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'C']) == 1:
-            amber_mapping['TAIL_NAME'] = atom.GetPDBResidueInfo().GetName().strip()
+            amber_mapping['TAIL_NAME'] = atom_name
 
         # 链接C和N的原子为主链原子
         if atom.GetSymbol() == 'C' and \
             len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'N']) == 1 and \
             len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'O']) == 0:
-            amber_mapping['MAIN_CHAIN'] = atom.GetPDBResidueInfo().GetName().strip()
+            amber_mapping['MAIN_CHAIN'] = atom_name
+
+    if amber_mapping['HEAD_NAME'] is None and matched_atom_names:
+        for atom in molecule.GetAtoms():
+            atom_name = atom.GetPDBResidueInfo().GetName().strip()
+            if atom_name in matched_atom_names and atom.GetSymbol() == 'N':
+                amber_mapping['HEAD_NAME'] = atom_name
+                break
 
     # 开始获取OMIT_NAME, 
     # 1. 与TAIL_NAME相邻的OH原子，包括O原子及其相邻的H原子
@@ -126,6 +186,8 @@ def modify_prepin(prepin, atom_map, O_mapping):
     # 使用sed命令修改prepin文件
     # # 1. 修改N3为N
     head_name = atom_map['HEAD_NAME']
+    if head_name is None:
+        raise ValueError('HEAD_NAME is None; check SMILES mapping or pattern matching.')
     if len(head_name) == 2:
         head_name = f'{head_name} '
     cmd = f"sed -i 's/{head_name}   NT/N     N /g' {prepin}"
@@ -134,6 +196,8 @@ def modify_prepin(prepin, atom_map, O_mapping):
 
     # # 2. 修改C6为C
     tail_name = atom_map['TAIL_NAME']
+    if tail_name is None:
+        raise ValueError('TAIL_NAME is None; check SMILES mapping or pattern matching.')
     if len(tail_name) == 2:
         tail_name = f'{tail_name} '
     cmd = f"sed -i 's/{tail_name}   C/C     C/g' {prepin}"
@@ -141,14 +205,17 @@ def modify_prepin(prepin, atom_map, O_mapping):
     os.system(cmd)
 
     # # 3. 修改O1为O
-    if len(O_mapping) == 2:
-        O_mapping = f'{O_mapping} '
-    cmd = f"sed -i 's/{O_mapping}   O/O     O/g' {prepin}"
-    print(cmd)
-    os.system(cmd)
+    if O_mapping:
+        if len(O_mapping) == 2:
+            O_mapping = f'{O_mapping} '
+        cmd = f"sed -i 's/{O_mapping}   O/O     O/g' {prepin}"
+        print(cmd)
+        os.system(cmd)
 
     # # 4. 修改C5位CA
     main_chain = atom_map['MAIN_CHAIN']
+    if main_chain is None:
+        raise ValueError('MAIN_CHAIN is None; check SMILES mapping or pattern matching.')
     if len(main_chain) == 2:
         main_chain = f'{main_chain} '
     cmd = f"sed -i 's/{main_chain}   CT/CA    CT/g' {prepin}"
@@ -199,19 +266,33 @@ def smi_to_sdf(smi, name=None):
     obabel -ismi R1A.smi -osdf -O R1A.sdf --gen3D
     '''
     with open(f'{name}.smi', 'w') as f:
-        f.write(smi)
+        f.write(_strip_atom_map(smi))
 
     cmd = f'obabel -ismi {name}.smi -osdf -O {name}.sdf --gen3D'
     print(cmd)
     os.system(cmd)
     return f'{name}.sdf'
 
-def sdf_to_ac(sdf, name=None):
+def _format_net_charge(charge):
+    if charge is None:
+        return None
+    try:
+        charge_val = float(charge)
+    except (TypeError, ValueError):
+        raise ValueError(f'Invalid charge value: {charge}')
+    if not charge_val.is_integer():
+        raise ValueError(f'Net charge must be an integer for antechamber: {charge}')
+    return str(int(charge_val))
+
+def sdf_to_ac(sdf, name=None, charge=None):
     """将SDF转换为Amber mc文件"""
     '''
     antechamber -fi sdf -i R1A.sdf -bk R1A -fo ac -o R1A.ac -c bcc -at amber
     '''
+    net_charge = _format_net_charge(charge)
     cmd = f'antechamber -fi sdf -i {sdf} -bk {name} -fo ac -o {name}.ac -c bcc -at amber'
+    if net_charge is not None:
+        cmd = f'{cmd} -nc {net_charge}'
     print(cmd)
     os.system(cmd)
     return f'{name}.ac'
@@ -278,10 +359,11 @@ if __name__ == '__main__':
     os.chdir(args.output)
 
     sdf = smi_to_sdf(args.smiles, args.name)
-    ac = sdf_to_ac(sdf, args.name)
+    ac = sdf_to_ac(sdf, args.name, args.charge)
     pdb = ac_to_pdb(ac, args.name)
 
-    matched_atoms = find_smiles_pattern(pdb)
+    pattern_smiles = args.smiles if _smiles_has_atom_map(args.smiles) else "NCC(O)O"
+    matched_atoms = find_smiles_pattern(pdb, smiles=pattern_smiles)
     mol = read_molecule_from_pdb(pdb)
     amber_map, O_mapping = map_to_amber_mc(mol, matched_atoms, charge=args.charge)
     print(f'amber_map: {amber_map}', f'O_mapping: {O_mapping}')
