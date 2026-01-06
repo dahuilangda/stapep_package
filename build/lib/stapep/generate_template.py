@@ -38,6 +38,35 @@ def _relax_bracket_hcount(smiles):
         return f'[{content}]'
     return re.sub(r'\[([^\]]+)\]', repl, smiles)
 
+def _atom_name(atom):
+    info = atom.GetPDBResidueInfo()
+    if info:
+        return info.GetName().strip()
+    return atom.GetSymbol()
+
+def _is_head_like_n(atom):
+    if atom.GetSymbol() != 'N':
+        return False
+    heavy_neighbors = [n for n in atom.GetNeighbors() if n.GetSymbol() != 'H']
+    c_neighbors = [n for n in heavy_neighbors if n.GetSymbol() == 'C']
+    return len(heavy_neighbors) == 1 and len(c_neighbors) == 1
+
+def _is_carboxyl_carbon(atom):
+    return atom.GetSymbol() == 'C' and len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'O']) == 2
+
+def _find_ca_tail_from_head(head_atom, in_scope):
+    for c in head_atom.GetNeighbors():
+        if c.GetSymbol() != 'C' or not in_scope(c):
+            continue
+        if _is_carboxyl_carbon(c):
+            continue
+        for nb in c.GetNeighbors():
+            if not in_scope(nb):
+                continue
+            if _is_carboxyl_carbon(nb):
+                return c, nb
+    return None, None
+
 def find_smiles_pattern(pdb, smiles="NCC(O)O"):
     """在PDB文件内容中寻找SMILES模式"""
     template_smiles = _strip_atom_map(smiles) if _smiles_has_atom_map(smiles) else None
@@ -121,59 +150,126 @@ def map_to_amber_mc(molecule,
     }
 
     matched_atom_names = {name.strip() for name in matched_atoms} if matched_atoms else set()
+    all_atom_names = {_atom_name(atom) for atom in molecule.GetAtoms()}
+    use_match_filter = bool(matched_atom_names)
+    if use_match_filter and len(matched_atom_names) >= len(all_atom_names):
+        use_match_filter = False
+
+    def _resolve_mapping(use_filter):
+        def in_scope(atom):
+            if not use_filter:
+                return True
+            return _atom_name(atom) in matched_atom_names
+
+        head_atom = None
+        main_chain_atom = None
+        tail_atom = None
+
+        head_candidates = [
+            atom for atom in molecule.GetAtoms()
+            if in_scope(atom) and _is_head_like_n(atom)
+        ]
+
+        for head in head_candidates:
+            ca, tail = _find_ca_tail_from_head(head, in_scope)
+            if ca and tail:
+                head_atom = head
+                main_chain_atom = ca
+                tail_atom = tail
+                break
+
+        if head_atom is None and head_candidates:
+            head_atom = head_candidates[0]
+
+        if head_atom and (main_chain_atom is None or tail_atom is None):
+            ca, tail = _find_ca_tail_from_head(head_atom, in_scope)
+            if main_chain_atom is None:
+                main_chain_atom = ca
+            if tail_atom is None:
+                tail_atom = tail
+
+        if head_atom is None or main_chain_atom is None or tail_atom is None:
+            for atom in molecule.GetAtoms():
+                if not in_scope(atom) or not _is_carboxyl_carbon(atom):
+                    continue
+                for ca in atom.GetNeighbors():
+                    if ca.GetSymbol() != 'C' or not in_scope(ca):
+                        continue
+                    if _is_carboxyl_carbon(ca):
+                        continue
+                    n_neighbors = [n for n in ca.GetNeighbors() if in_scope(n) and _is_head_like_n(n)]
+                    if n_neighbors:
+                        if head_atom is None:
+                            head_atom = n_neighbors[0]
+                        if main_chain_atom is None:
+                            main_chain_atom = ca
+                        if tail_atom is None:
+                            tail_atom = atom
+                        break
+                if head_atom and main_chain_atom and tail_atom:
+                    break
+
+        if main_chain_atom is None and head_atom and tail_atom:
+            for atom in molecule.GetAtoms():
+                if not in_scope(atom):
+                    continue
+                if atom.GetSymbol() != 'C':
+                    continue
+                if head_atom in atom.GetNeighbors() and tail_atom in atom.GetNeighbors():
+                    main_chain_atom = atom
+                    break
+
+        if tail_atom is None and main_chain_atom:
+            for nb in main_chain_atom.GetNeighbors():
+                if in_scope(nb) and _is_carboxyl_carbon(nb):
+                    tail_atom = nb
+                    break
+
+        if head_atom is None and matched_atom_names:
+            for atom in molecule.GetAtoms():
+                if in_scope(atom) and atom.GetSymbol() == 'N':
+                    head_atom = atom
+                    break
+
+        return head_atom, main_chain_atom, tail_atom
+
+    head_atom, main_chain_atom, tail_atom = _resolve_mapping(use_match_filter)
+    if matched_atom_names and (head_atom is None or main_chain_atom is None or tail_atom is None):
+        head_fallback, main_fallback, tail_fallback = _resolve_mapping(False)
+        if head_atom is None:
+            head_atom = head_fallback
+        if main_chain_atom is None:
+            main_chain_atom = main_fallback
+        if tail_atom is None:
+            tail_atom = tail_fallback
+
+    if head_atom:
+        amber_mapping['HEAD_NAME'] = _atom_name(head_atom)
+    if tail_atom:
+        amber_mapping['TAIL_NAME'] = _atom_name(tail_atom)
+    if main_chain_atom:
+        amber_mapping['MAIN_CHAIN'] = _atom_name(main_chain_atom)
 
     O_mapping = None
-
-    use_match_filter = bool(matched_atom_names)
-    for atom in molecule.GetAtoms():
-        atom_name = atom.GetPDBResidueInfo().GetName().strip()
-        if use_match_filter and atom_name not in matched_atom_names:
-            continue
-
-        # N原子作为头部：只连接一个重原子(通常是C)，且带有氢(显式或隐式)
-        if atom.GetSymbol() == 'N':
-            heavy_neighbors = [n for n in atom.GetNeighbors() if n.GetSymbol() != 'H']
-            c_neighbors = [n for n in heavy_neighbors if n.GetSymbol() == 'C']
-            if len(heavy_neighbors) == 1 and len(c_neighbors) == 1:
-                amber_mapping['HEAD_NAME'] = atom_name
-
-        # C原子: 相邻原子为=O，-O，C
-        elif atom.GetSymbol() == 'C' and \
-            len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'O']) == 2 and \
-            len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'C']) == 1:
-            amber_mapping['TAIL_NAME'] = atom_name
-
-        # 链接C和N的原子为主链原子
-        if atom.GetSymbol() == 'C' and \
-            len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'N']) == 1 and \
-            len([n for n in atom.GetNeighbors() if n.GetSymbol() == 'O']) == 0:
-            amber_mapping['MAIN_CHAIN'] = atom_name
-
-    if amber_mapping['HEAD_NAME'] is None and matched_atom_names:
-        for atom in molecule.GetAtoms():
-            atom_name = atom.GetPDBResidueInfo().GetName().strip()
-            if atom_name in matched_atom_names and atom.GetSymbol() == 'N':
-                amber_mapping['HEAD_NAME'] = atom_name
-                break
 
     # 开始获取OMIT_NAME, 
     # 1. 与TAIL_NAME相邻的OH原子，包括O原子及其相邻的H原子
     for atom in molecule.GetAtoms():
-        if atom.GetPDBResidueInfo().GetName().strip() == amber_mapping['TAIL_NAME']:
+        if _atom_name(atom) == amber_mapping['TAIL_NAME']:
             for n in atom.GetNeighbors():
                 if n.GetSymbol() == 'O' and len([n for n in n.GetNeighbors() if n.GetSymbol() == 'H']) == 1:
-                    amber_mapping['OMIT_NAME'].append(n.GetPDBResidueInfo().GetName().strip())
-                    amber_mapping['OMIT_NAME'].extend([n.GetPDBResidueInfo().GetName().strip() for n in n.GetNeighbors() if n.GetSymbol() == 'H'])
+                    amber_mapping['OMIT_NAME'].append(_atom_name(n))
+                    amber_mapping['OMIT_NAME'].extend([_atom_name(n) for n in n.GetNeighbors() if n.GetSymbol() == 'H'])
 
                 if n.GetSymbol() == 'O' and len([n for n in n.GetNeighbors() if n.GetSymbol() == 'H']) == 0:
-                    O_mapping = n.GetPDBResidueInfo().GetName().strip()
+                    O_mapping = _atom_name(n)
 
     for atom in molecule.GetAtoms():
-        if atom.GetPDBResidueInfo().GetName().strip() == amber_mapping['HEAD_NAME']:
+        if _atom_name(atom) == amber_mapping['HEAD_NAME']:
             # 2. 与HEAD_NAME相邻的NH原子，有2个H，但是只删除一个H
             for n in atom.GetNeighbors():
                 if n.GetSymbol() == 'H' and len([n for n in n.GetNeighbors() if n.GetSymbol() == 'N']) == 1:
-                    amber_mapping['OMIT_NAME'].append(n.GetPDBResidueInfo().GetName().strip())
+                    amber_mapping['OMIT_NAME'].append(_atom_name(n))
                     break
 
     return amber_mapping, O_mapping
