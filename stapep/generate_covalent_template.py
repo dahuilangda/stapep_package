@@ -480,48 +480,58 @@ def modify_ac(ac, atom_map, O_mappings):
     with open(ac, 'w') as f:
         f.writelines(lines)
 
-def modify_prepin(prepin, atom_map, O_mappings):
+def modify_prepin(prepin, atom_map, O_mappings, head_h_names=None):
     '''
-    Modifies the prepin file using sed commands.
+    Modifies the prepin file using direct column updates.
     '''
-    # 1. Modify N3 to N
+
+    def _update_line(line, replacements):
+        if len(line) < 18:
+            return line
+        if not line[:4].strip().isdigit():
+            return line
+        atom_name = line[6:10].strip()
+        if atom_name not in replacements:
+            return line
+        new_name, new_type = replacements[atom_name]
+        return f"{line[:6]}{new_name:<4}{line[10:12]}{new_type:<4}{line[16:]}"
+
     head_names = atom_map['HEAD_NAME']
-    for head_name in head_names:
-        if len(head_name) == 2:
-            head_name = f'{head_name} '
-        cmd = f"sed -i 's/{head_name}   NT/N     N /g' {prepin}"
-        print(cmd)
-        os.system(cmd)
-
-    # 2. Modify C6 to C
     tail_names = atom_map['TAIL_NAME']
-    for tail_name in tail_names:
-        if len(tail_name) == 2:
-            tail_name = f'{tail_name} '
-        cmd = f"sed -i 's/{tail_name}   C/C     C/g' {prepin}"
-        print(cmd)
-        os.system(cmd)
-
-    for O_mapping in O_mappings:
-        # 3. Modify O1 to O
-        if len(O_mapping) == 2:
-            O_mapping = f'{O_mapping} '
-        elif len(O_mapping) == 3:
-            O_mapping = f'{O_mapping}'
-        elif len(O_mapping) == 1:
-            O_mapping = f'{O_mapping}   '
-        cmd = f"sed -i 's/{O_mapping}   O/O     O/g' {prepin}"
-        print(cmd)
-        os.system(cmd)
-
-    # 4. Modify C5 to CA
     main_chains = atom_map['MAIN_CHAIN']
+
+    replacements = {}
+    for head_name in head_names:
+        replacements[head_name] = ('N', 'N')
+    for tail_name in tail_names:
+        replacements[tail_name] = ('C', 'C')
     for main_chain in main_chains:
-        if len(main_chain) == 2:
-            main_chain = f'{main_chain} '
-        cmd = f"sed -i 's/{main_chain}   CT/CA    CT/g' {prepin}"
-        print(cmd)
-        os.system(cmd)
+        replacements[main_chain] = ('CA', 'CT')
+    for O_mapping in O_mappings:
+        replacements[O_mapping] = ('O', 'O')
+    if head_h_names:
+        for h_name in head_h_names:
+            replacements[h_name] = (h_name, 'H')
+
+    required = set(head_names) | set(tail_names) | set(main_chains)
+    required.update(O_mappings)
+    updated = {name: False for name in replacements}
+    with open(prepin, 'r') as f:
+        lines = f.readlines()
+
+    new_lines = []
+    for line in lines:
+        atom_name = line[6:10].strip() if len(line) >= 10 else ''
+        if atom_name in replacements:
+            updated[atom_name] = True
+        new_lines.append(_update_line(line, replacements))
+
+    missing = [name for name in required if not updated.get(name, False)]
+    if missing:
+        raise ValueError(f'Failed to update atom names/types in prepin: {", ".join(missing)}')
+
+    with open(prepin, 'w') as f:
+        f.writelines(new_lines)
 
 def write_amber_mc(amber_map, output_file):
     """
@@ -588,13 +598,69 @@ def _format_net_charge(charge):
         raise ValueError(f'Net charge must be an integer for antechamber: {charge}')
     return str(int(charge_val))
 
-def sdf_to_ac(sdf, name=None, charge=None):
+def _ac_has_du(ac_file):
+    try:
+        with open(ac_file, 'r') as f:
+            for line in f:
+                if not line.startswith('ATOM'):
+                    continue
+                parts = line.split()
+                if parts and parts[-1] == 'DU':
+                    return True
+    except FileNotFoundError:
+        return False
+    return False
+
+def _find_head_hydrogens(ac_file, head_names):
+    if not head_names:
+        return []
+    name_to_index = {}
+    index_to_name = {}
+    index_to_type = {}
+    bonds = {}
+    try:
+        with open(ac_file, 'r') as f:
+            for line in f:
+                if line.startswith('ATOM'):
+                    parts = line.split()
+                    if len(parts) < 3:
+                        continue
+                    idx = int(parts[1])
+                    name = parts[2]
+                    atype = parts[-1] if parts else ''
+                    name_to_index[name] = idx
+                    index_to_name[idx] = name
+                    index_to_type[idx] = atype
+                elif line.startswith('BOND'):
+                    parts = line.split()
+                    if len(parts) < 4:
+                        continue
+                    idx1 = int(parts[2])
+                    idx2 = int(parts[3])
+                    bonds.setdefault(idx1, set()).add(idx2)
+                    bonds.setdefault(idx2, set()).add(idx1)
+    except FileNotFoundError:
+        return []
+
+    h_names = set()
+    for head_name in head_names:
+        head_idx = name_to_index.get(head_name)
+        if head_idx is None:
+            continue
+        for nb in bonds.get(head_idx, []):
+            nb_name = index_to_name.get(nb)
+            nb_type = index_to_type.get(nb, '')
+            if nb_name and (nb_name.startswith('H') or (nb_type and nb_type[0].lower() == 'h')):
+                h_names.add(nb_name)
+    return sorted(h_names)
+
+def sdf_to_ac(sdf, name=None, charge=None, atom_type='amber'):
     """将SDF转换为Amber mc文件"""
     '''
     antechamber -fi sdf -i R1A.sdf -bk R1A -fo ac -o R1A.ac -c bcc -at amber
     '''
     net_charge = _format_net_charge(charge)
-    cmd = f'antechamber -fi sdf -i {sdf} -bk {name} -fo ac -o {name}.ac -c bcc -at amber'
+    cmd = f'antechamber -fi sdf -i {sdf} -bk {name} -fo ac -o {name}.ac -c bcc -at {atom_type}'
     if net_charge is not None:
         cmd = f'{cmd} -nc {net_charge}'
     print(cmd)
@@ -696,8 +762,14 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # Generate the AC file
-    ac1 = sdf_to_ac(sdf1, args.name1, args.charge1)
-    ac2 = sdf_to_ac(sdf2, args.name2, args.charge2)
+    ac1 = sdf_to_ac(sdf1, args.name1, args.charge1, atom_type='amber')
+    if _ac_has_du(ac1):
+        print('Info: detected DU atom type with -at amber; retrying with -at gaff2.')
+        ac1 = sdf_to_ac(sdf1, args.name1, args.charge1, atom_type='gaff2')
+    ac2 = sdf_to_ac(sdf2, args.name2, args.charge2, atom_type='amber')
+    if _ac_has_du(ac2):
+        print('Info: detected DU atom type with -at amber; retrying with -at gaff2.')
+        ac2 = sdf_to_ac(sdf2, args.name2, args.charge2, atom_type='gaff2')
 
     # Generate the PDB file
     pdb1 = ac_to_pdb(ac1, args.name1)
@@ -736,8 +808,10 @@ if __name__ == '__main__':
     mc2 = write_amber_mc(amber_map_2, args.name2)
     prepin1 = mc_to_prepin(ac1, mc1, f'{args.name1}.prepin')
     prepin2 = mc_to_prepin(ac2, mc2, f'{args.name2}.prepin')
-    modify_prepin(prepin1, amber_map_1, O_mapping_1)
-    modify_prepin(prepin2, amber_map_2, O_mapping_2)
+    head_h_names_1 = _find_head_hydrogens(ac1, amber_map_1['HEAD_NAME'])
+    head_h_names_2 = _find_head_hydrogens(ac2, amber_map_2['HEAD_NAME'])
+    modify_prepin(prepin1, amber_map_1, O_mapping_1, head_h_names=head_h_names_1)
+    modify_prepin(prepin2, amber_map_2, O_mapping_2, head_h_names=head_h_names_2)
     prep_to_frcmod(prepin1, f'frcmod.{args.name1}')
     prep_to_frcmod(prepin2, f'frcmod.{args.name2}')
 
@@ -745,7 +819,10 @@ if __name__ == '__main__':
     combined_charges = float(args.charge1) + float(args.charge2)
     combined_smiles = connect_molecules(args.smiles1, args.smiles2, f'{args.name1}_{args.name2}', nbonds=args.nbonds) # 生成连接后的SMILES
     combined_sdf = smi_to_sdf(process_smiles(combined_smiles), f'{args.name1}_{args.name2}') # 生成连接后的SDF
-    combined_ac = sdf_to_ac(combined_sdf, f'{args.name1}_{args.name2}', combined_charges) # 生成连接后的AC
+    combined_ac = sdf_to_ac(combined_sdf, f'{args.name1}_{args.name2}', combined_charges, atom_type='amber') # 生成连接后的AC
+    if _ac_has_du(combined_ac):
+        print('Info: detected DU atom type with -at amber; retrying with -at gaff2.')
+        combined_ac = sdf_to_ac(combined_sdf, f'{args.name1}_{args.name2}', combined_charges, atom_type='gaff2') # 生成连接后的AC
     combined_pdb = ac_to_pdb(combined_ac, f'{args.name1}_{args.name2}') # 生成连接后的PDB
     combined_mol = read_molecule_from_pdb(combined_pdb)
     combined_matched_atoms = find_smiles_pattern(combined_pdb)
